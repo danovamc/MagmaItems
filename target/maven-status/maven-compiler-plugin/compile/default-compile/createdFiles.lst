@@ -1,6 +1,7 @@
 dev\lujanabril\magmaItems\Managers\ConfirmationManager$ConfirmMenuHolder.class
 dev\lujanabril\magmaItems\Managers\ItemManager$ItemData.class
 dev\lujanabril\magmaItems\Managers\BombManager$1.class
+dev\lujanabril\magmaItems\Listeners\TotemListener.class
 dev\lujanabril\magmaItems\Listeners\ItemListener$1.class
 dev\lujanabril\magmaItems\Managers\BombManager$ExplosionData.class
 dev\lujanabril\magmaItems\Main.class

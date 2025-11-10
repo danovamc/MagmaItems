@@ -4,21 +4,25 @@ bomb:
   allowed-worlds:
     - mina
     - minasvip
-    - world
+
+totem:
+  allowed-worlds:
+    - mina
+    - minasvip
 
 messages:
-  no-permission: "<red>You do not have permission to use this command."
-  usage: "<gray>Usage: /magmaitem [give|reload|applyid|storage|history|checkduplicates]"
-  give-usage: "<gray>Usage: /magmaitem give <player> <item> [amount]"
-  player-not-found: "<red>Player '%player%' not found or is offline."
-  item-not-found: "<red>Item '%item%' does not exist."
-  invalid-amount: "<red>Amount must be between 1 and 64."
-  invalid-number: "<red>Invalid amount: Must be a number."
-  give-success: "<green>Successfully gave <yellow>%amount%x %item% <green>to <yellow>%player%<green>."
-  player-only: "<red>This command can only be executed by a player."
-  reload-success: "<green>Configuration reloaded successfully."
-  teleport-success: "<green>Teleported to <yellow>%player%"
-  player-offline: "<red>Player is not online."
+  no-permission: "<red>No tienes permiso para usar este comando."
+  usage: "<gray>Uso: /magmaitem [give|reload|applyid|storage|history|checkduplicates]"
+  give-usage: "<gray>Uso: /magmaitem give <player> <item> [amount]"
+  player-not-found: "<red>Jugador '%player%' no encontrado o está desconectado."
+  item-not-found: "<red>El ítem '%item%' no existe."
+  invalid-amount: "<red>La cantidad debe estar entre 1 y 64."
+  invalid-number: "<red>Cantidad inválida: Debe ser un número."
+  give-success: "<green>Se dio exitosamente <yellow>%amount%x %item% <green>a <yellow>%player%<green>."
+  player-only: "<red>Este comando solo puede ser ejecutado por un jugador."
+  reload-success: "<green>Configuración recargada exitosamente."
+  teleport-success: "<green>Teletransportado a <yellow>%player%"
+  player-offline: "<red>El jugador no está en línea/conectado."
 
   bomb-cooldown: "§x§F§F§3§4§5§8§lDINAMITA §8➡ §f¡Debes esperar §e{time} §fantes de usar otra dinamita!"
   bomb-sale-chat: "§x§F§F§3§4§5§8§lDINAMITA §8➡ §f¡Has vendido §e{items} §fitems por §x§5§9§f§f§2§0${money}§f!"
@@ -26,28 +30,31 @@ messages:
   bomb-sale-subtitle: "§x§5§9§f§f§2§0+${money}"
   world-not-allowed: "§x§F§F§3§4§5§8§lDINAMITA §8➡ §f¡No puedes §cusar §fdinamitas aquí!"
 
-  already-has-id: "<red>This item already has a unique ID."
-  custom-id-exists: "<red>The ID '%id%' already exists. Please choose a different one."
-  no-item-in-hand: "<red>You must hold an item in your main hand."
-  id-applied: "<green>Item has been assigned a unique ID."
+  already-has-id: "<red>Este ítem ya tiene una ID única."
+  custom-id-exists: "<red>La ID '%id%' ya existe. Por favor, elige una diferente."
+  no-item-in-hand: "<red>Debes sostener un ítem en tu mano principal."
+  id-applied: "<green>Se ha asignado una ID única al ítem."
 
-  storage-usage: "<gray>Usage: /magmaitem storage [save|give|list|remove]"
+  storage-usage: "<gray>Uso: /magmaitem storage [save|give|list|remove]"
 
-  storage-save-usage: "<gray>Usage: /magmaitem storage save <name>"
-  storage-save-success: "<green>Item successfully saved as <yellow>'%name%'<green>."
-  storage-item-exists: "<red>An item with the name '%name%' already exists in storage."
-  storage-save-error: "<red>Failed to save item. Check console."
+  storage-save-usage: "<gray>Uso: /magmaitem storage save <name>"
+  storage-save-success: "<green>Ítem guardado exitosamente como <yellow>'%name%'<green>."
+  storage-item-exists: "<red>Ya existe un ítem con el nombre '%name%' en el almacenamiento."
+  storage-save-error: "<red>Fallo al guardar el ítem. Revisa la consola."
 
-  storage-give-usage: "<gray>Usage: /magmaitem storage give <player> <name> [--applyid]"
-  storage-item-not-found: "<red>Item '%name%' not found in storage."
-  storage-give-success: "<green>Successfully gave <yellow>1x %item% <green>from storage to <yellow>%player%<green>."
+  storage-give-usage: "<gray>Uso: /magmaitem storage give <player> <name> [--applyid]"
+  storage-item-not-found: "<red>Ítem '%name%' no encontrado en el almacenamiento."
+  storage-give-success: "<green>Se dio exitosamente <yellow>1x %item% <green>del almacenamiento a <yellow>%player%<green>."
 
-  storage-remove-usage: "<gray>Usage: /magmaitem storage remove <item_name>"
-  storage-remove-success: "<green>Item <yellow>'%name%' <green>successfully removed from storage."
+  storage-remove-usage: "<gray>Uso: /magmaitem storage remove <item_name>"
+  storage-remove-success: "<green>Ítem <yellow>'%name%' <green>eliminado exitosamente del almacenamiento."
 
-  storage-list-header: "<gold>--- <yellow> Stored Items (%count%) <gold>---"
-  storage-list-empty: "<yellow> No items are currently stored."
-  storage-list-content: "<green>Stored Items: <white>%items%"
+  storage-list-header: "<gold>--- <yellow> Ítems Almacenados (%count%) <gold>---"
+  storage-list-empty: "<yellow> Actualmente no hay ítems almacenados."
+  storage-list-content: "<green>Ítems Almacenados: <white>%items%"
+
+  totem-save: "<#FFD700><b>TOTEM</b> <dark_gray>➡</dark_gray> <green>¡El <gold>Tótem de Usos Múltiples</gold> te ha salvado! <gray>Usos restantes: <yellow>{uses}"
+  totem-consumed: "<#FFD700><b>TOTEM</b> <dark_gray>➡</dark_gray> <red>El <gold>Tótem de Usos Múltiples</gold> se ha consumido por completo."
 
 confirmation:
   title: "             ᴄᴏɴғɪʀᴍᴀʀ"

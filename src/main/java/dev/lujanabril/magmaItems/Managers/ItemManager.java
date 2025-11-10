@@ -25,6 +25,9 @@ import org.bukkit.inventory.meta.trim.TrimMaterial;
 import org.bukkit.inventory.meta.trim.TrimPattern;
 import org.bukkit.persistence.PersistentDataType;
 
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+
 import java.io.File;
 import java.util.*;
 import java.util.logging.Level;
@@ -32,6 +35,7 @@ import java.util.logging.Level;
 public class ItemManager {
     private final Main plugin;
     private final NamespacedKey key;
+    private final NamespacedKey totemUsesKey;
     private final Map<String, ItemData> itemDataCache = new HashMap();
     private final File itemsFolder;
 
@@ -39,6 +43,7 @@ public class ItemManager {
         this.plugin = plugin;
         this.key = new NamespacedKey(plugin, "magma_item");
         this.itemsFolder = new File(plugin.getDataFolder(), "Items");
+        this.totemUsesKey = new NamespacedKey(plugin, "totem_uses");
         if (!this.itemsFolder.exists()) {
             this.itemsFolder.mkdirs();
         }
@@ -263,6 +268,11 @@ public class ItemManager {
                     boolean keepOnDeath = section.getBoolean("keep-on-death", false);
                     boolean interactable = section.getBoolean("interactable", true);
 
+                    // <<<< LECTURA DE CAMPOS TOTEM >>>>
+                    int totemUses = section.getInt("totem-uses", 0);
+                    List<String> totemEffects = section.getStringList("totem-effects");
+                    // <<<< FIN LECTURA >>>>
+
                     // APLICAR EL IDENTIFICADOR MAGMA_ITEM (PDC)
                     meta.getPersistentDataContainer().set(this.key, PersistentDataType.STRING, itemId);
 
@@ -292,7 +302,9 @@ public class ItemManager {
                     }
 
                     boolean requireConfirmation = section.getBoolean("requireConfirmation", false);
-                    this.itemDataCache.put(itemId, new ItemData(item, actions, shiftClickActions, requireConfirmation, droppable, keepOnDeath, interactable));
+
+                    // MODIFICAR CONSTRUCTOR DE ITEMDATA
+                    this.itemDataCache.put(itemId, new ItemData(item, actions, shiftClickActions, requireConfirmation, droppable, keepOnDeath, interactable, totemUses, totemEffects));
                     ++loadedCount;
                 } catch (Exception e) {
                     this.plugin.getLogger().log(Level.SEVERE, "Error loading item " + itemId, e);
@@ -448,7 +460,52 @@ public class ItemManager {
 
     public ItemStack createItem(String itemId) {
         ItemData data = (ItemData)this.itemDataCache.get(itemId);
-        return data == null ? null : data.item.clone();
+        if (data == null) {
+            return null;
+        }
+
+        ItemStack item = data.item.clone();
+
+        // LÓGICA DE INICIALIZACIÓN AUTOMÁTICA DEL TOTEM
+        if (data.getInitialTotemUses() > 0) {
+            ItemMeta meta = item.getItemMeta();
+            if (meta != null) {
+
+                // 1. Aplicar NBT de usos
+                meta.getPersistentDataContainer().set(this.totemUsesKey, PersistentDataType.INTEGER, data.getInitialTotemUses());
+
+                // 2. Renderizar y aplicar el Lore
+                String usesLorePrefixFormat = "<!i><#777777>Usos restantes: <#FFD700>";
+
+                // Obtenemos la línea renderizada usando el método auxiliar de Main
+                String renderedUsesLine = plugin.renderMiniMessageToLegacy(usesLorePrefixFormat + data.getInitialTotemUses());
+
+                // Obtener el Lore como Component (moderno)
+                List<Component> currentLoreComponents = meta.lore() != null ? meta.lore() : new ArrayList<>();
+                List<Component> finalLoreComponents = new ArrayList<>();
+                String strippedPrefix = "Usos restantes:";
+
+                // Iterar sobre los Componentes
+                for (Component component : currentLoreComponents) {
+                    // Convertir el Component a texto plano para la comparación
+                    String strippedLine = PlainTextComponentSerializer.plainText().serialize(component);
+
+                    // Omitimos la línea antigua de usos si existe
+                    if (!strippedLine.startsWith(strippedPrefix)) {
+                        finalLoreComponents.add(component); // Mantiene las líneas originales
+                    }
+                }
+
+                // Añadimos la nueva línea de usos como Component
+                finalLoreComponents.add(plugin.getMiniMessage().deserialize(usesLorePrefixFormat + data.getInitialTotemUses()));
+
+                meta.lore(finalLoreComponents); // Usar meta.lore() (moderno)
+
+                item.setItemMeta(meta);
+            }
+        }
+
+        return item;
     }
 
     public List<Action> getActions(String itemId) {
@@ -512,6 +569,12 @@ public class ItemManager {
         return new ArrayList(this.itemDataCache.keySet());
     }
 
+    // Método para que el TotemListener obtenga los efectos
+    public List<String> getTotemEffects(String itemId) {
+        ItemData data = (ItemData)this.itemDataCache.get(itemId);
+        return (data != null) ? data.getTotemEffects() : new ArrayList<>();
+    }
+
     public static class ItemData {
         private final ItemStack item;
         private final List<Action> actions;
@@ -520,8 +583,10 @@ public class ItemManager {
         private final boolean droppable;
         private final boolean keepOnDeath;
         private final boolean interactable;
+        private final int initialTotemUses;
+        private final List<String> totemEffects;
 
-        public ItemData(ItemStack item, List<Action> actions, List<Action> shiftClickActions, boolean requireConfirmation, boolean droppable, boolean keepOnDeath, boolean interactable) {
+        public ItemData(ItemStack item, List<Action> actions, List<Action> shiftClickActions, boolean requireConfirmation, boolean droppable, boolean keepOnDeath, boolean interactable, int initialTotemUses, List<String> totemEffects) {
             this.item = item;
             this.actions = actions;
             this.shiftClickActions = shiftClickActions;
@@ -529,6 +594,8 @@ public class ItemManager {
             this.droppable = droppable;
             this.keepOnDeath = keepOnDeath;
             this.interactable = interactable;
+            this.initialTotemUses = initialTotemUses;
+            this.totemEffects = totemEffects;
         }
 
         public boolean isDroppable() {
@@ -541,6 +608,14 @@ public class ItemManager {
 
         public boolean isInteractable() {
             return this.interactable;
+        }
+
+        public int getInitialTotemUses() {
+            return this.initialTotemUses;
+        }
+
+        public List<String> getTotemEffects() {
+            return this.totemEffects;
         }
     }
 

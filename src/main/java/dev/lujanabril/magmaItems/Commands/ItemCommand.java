@@ -149,7 +149,7 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
 
         this.itemTrackingManager.removeItemTracking(uniqueId);
 
-        String success = this.parsePlaceholders(this.plugin.getConfig().getString("messages.history-remove-success", "<green>Item tracking data for ID '<yellow>%id%<green>' successfully removed."))
+        String success = this.parsePlaceholders(this.plugin.getConfig().getString("messages.history-remove-success", "<green>Item tracking data for ID '<yellow>%id%<red>' successfully removed."))
                 .replace("%id%", uniqueId);
         sender.sendMessage(this.miniMessage.deserialize(this.prefix + success));
         return true;
@@ -358,96 +358,6 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    private void applyUniqueId(ItemStack item, Player player, String itemName) {
-        if (item != null && item.hasItemMeta()) {
-            String uniqueId = this.generateUniqueId();
-            ItemMeta meta = item.getItemMeta();
-            PersistentDataContainer container = meta.getPersistentDataContainer();
-            container.set(this.itemIdKey, PersistentDataType.STRING, uniqueId);
-            List<String> lore = (List<String>) (meta.hasLore() ? meta.getLore() : new ArrayList());
-            if (lore == null) {
-                lore = new ArrayList();
-            }
-
-            lore.add("");
-            lore.add("§8[ID-" + uniqueId + "]");
-            meta.setLore(lore);
-            item.setItemMeta(meta);
-            String originalOwner = this.extractOriginalOwnerFromLore(meta);
-            if (originalOwner.equals("Desconocido")) {
-                originalOwner = player.getName();
-            }
-
-            this.itemTrackingManager.registerItem(uniqueId, player.getUniqueId().toString(), player.getName(), itemName, originalOwner);
-            this.itemTrackingManager.updateItemMaterial(uniqueId, item.getType());
-        }
-
-    }
-
-    private String extractOriginalOwnerFromLore(ItemMeta meta) {
-        if (meta != null && meta.hasLore()) {
-            List<String> lore = meta.getLore();
-            if (lore.size() >= 4) {
-                String loreLine = (String) lore.get(3);
-                if (loreLine != null && !loreLine.isEmpty()) {
-                    return loreLine.replaceAll("&[0-9a-fk-or]|✎", "").trim();
-                }
-            }
-        }
-
-        return "Desconocido";
-    }
-
-    private boolean hasUniqueId(ItemStack item) {
-        if (item != null && item.hasItemMeta()) {
-            ItemMeta meta = item.getItemMeta();
-            PersistentDataContainer container = meta.getPersistentDataContainer();
-            return container.has(this.itemIdKey, PersistentDataType.STRING);
-        } else {
-            return false;
-        }
-    }
-
-    private String generateUniqueId() {
-        StringBuilder idBuilder = new StringBuilder();
-        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        Random random = new Random();
-
-        for (int i = 0; i < 5; ++i) {
-            idBuilder.append(chars.charAt(random.nextInt(chars.length())));
-        }
-
-        String generatedId = idBuilder.toString();
-        return this.itemTrackingManager.idExists(generatedId) ? this.generateUniqueId() : generatedId;
-    }
-
-    private ItemStack createItemWithPlayerPlaceholder(String itemId, Player player) {
-        ItemStack itemBase = this.itemManager.createItem(itemId);
-        if (itemBase == null) {
-            return null;
-        } else {
-            if (itemBase.hasItemMeta() && itemBase.getItemMeta().hasLore()) {
-                ItemMeta meta = itemBase.getItemMeta();
-                List<String> lore = meta.getLore();
-                if (lore != null) {
-                    List<String> newLore = new ArrayList();
-
-                    for (String line : lore) {
-                        String processedLine = line.replace("%player%", player.getName());
-                        processedLine = processedLine.replace("%player_display%", player.getDisplayName());
-                        processedLine = processedLine.replace("%player_uuid%", player.getUniqueId().toString());
-                        newLore.add(processedLine);
-                    }
-
-                    meta.setLore(newLore);
-                    itemBase.setItemMeta(meta);
-                }
-            }
-
-            return itemBase;
-        }
-    }
-
     private boolean handleStorageSave(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             String playerOnly = this.parsePlaceholders(this.plugin.getConfig().getString("messages.player-only", "<red>This command can only be used by players."));
@@ -603,6 +513,97 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
                 }
                 return true;
             }
+        }
+    }
+
+    private void applyUniqueId(ItemStack item, Player player, String itemName) {
+        if (item != null && item.hasItemMeta()) {
+            String uniqueId = this.generateUniqueId();
+            ItemMeta meta = item.getItemMeta();
+            PersistentDataContainer container = meta.getPersistentDataContainer();
+            container.set(this.itemIdKey, PersistentDataType.STRING, uniqueId);
+            List<String> lore = (List<String>) (meta.hasLore() ? meta.getLore() : new ArrayList());
+            if (lore == null) {
+                lore = new ArrayList();
+            }
+
+            lore.add("");
+            lore.add("§8[ID-" + uniqueId + "]");
+            meta.setLore(lore);
+            item.setItemMeta(meta);
+            String originalOwner = this.extractOriginalOwnerFromLore(meta);
+            if (originalOwner.equals("Desconocido")) {
+                originalOwner = player.getName();
+            }
+
+            this.itemTrackingManager.registerItem(uniqueId, player.getUniqueId().toString(), player.getName(), itemName, originalOwner);
+            this.itemTrackingManager.updateItemMaterial(uniqueId, item.getType());
+        }
+
+    }
+
+    private String extractOriginalOwnerFromLore(ItemMeta meta) {
+        if (meta != null && meta.hasLore()) {
+            List<String> lore = meta.getLore();
+            if (lore.size() >= 4) {
+                String loreLine = (String) lore.get(3);
+                if (loreLine != null && !loreLine.isEmpty()) {
+                    String plainText = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(this.miniMessage.deserialize(loreLine));
+                    return plainText.replaceAll("✎", "").trim();
+                }
+            }
+        }
+
+        return "Desconocido";
+    }
+
+    private boolean hasUniqueId(ItemStack item) {
+        if (item != null && item.hasItemMeta()) {
+            ItemMeta meta = item.getItemMeta();
+            PersistentDataContainer container = meta.getPersistentDataContainer();
+            return container.has(this.itemIdKey, PersistentDataType.STRING);
+        } else {
+            return false;
+        }
+    }
+
+    private String generateUniqueId() {
+        StringBuilder idBuilder = new StringBuilder();
+        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        Random random = new Random();
+
+        for (int i = 0; i < 5; ++i) {
+            idBuilder.append(chars.charAt(random.nextInt(chars.length())));
+        }
+
+        String generatedId = idBuilder.toString();
+        return this.itemTrackingManager.idExists(generatedId) ? this.generateUniqueId() : generatedId;
+    }
+
+    private ItemStack createItemWithPlayerPlaceholder(String itemId, Player player) {
+        ItemStack itemBase = this.itemManager.createItem(itemId);
+        if (itemBase == null) {
+            return null;
+        } else {
+            if (itemBase.hasItemMeta() && itemBase.getItemMeta().hasLore()) {
+                ItemMeta meta = itemBase.getItemMeta();
+                List<String> lore = meta.getLore();
+                if (lore != null) {
+                    List<String> newLore = new ArrayList();
+
+                    for (String line : lore) {
+                        String processedLine = line.replace("%player%", player.getName());
+                        processedLine = processedLine.replace("%player_display%", player.getDisplayName());
+                        processedLine = processedLine.replace("%player_uuid%", player.getUniqueId().toString());
+                        newLore.add(processedLine);
+                    }
+
+                    meta.setLore(newLore);
+                    itemBase.setItemMeta(meta);
+                }
+            }
+
+            return itemBase;
         }
     }
 

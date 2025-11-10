@@ -5,6 +5,7 @@ import dev.lujanabril.magmaItems.GUI.HistoryGUI;
 import dev.lujanabril.magmaItems.Listeners.*;
 import dev.lujanabril.magmaItems.Managers.*;
 import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -43,6 +44,7 @@ public class Main extends JavaPlugin {
         this.getServer().getPluginManager().registerEvents(new CustomItemListener(this, this.customItemManager), this);
         this.getServer().getPluginManager().registerEvents(new ItemEventListener(this, this.itemManager), this);
         this.getServer().getPluginManager().registerEvents(new HistoryGUIListener(this, this.miniMessage, this.prefix), this);
+        this.getServer().getPluginManager().registerEvents(new TotemListener(this), this);
 
         this.itemCommand = new ItemCommand(this);
         this.getCommand("magmaitems").setExecutor(this.itemCommand);
@@ -65,16 +67,25 @@ public class Main extends JavaPlugin {
         Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> this.itemTrackingManager.checkAllMagmaItems(), 600L, 600L);
     }
 
-    // 💡 MÉTODO AÑADIDO PARA LA VERIFICACIÓN DE ADVANCEDENCHANTMENTS
-    /**
-     * Verifica si el plugin AdvancedEnchantments está cargado y habilitado.
-     * @return true si el plugin está presente, false en caso contrario.
-     */
     public boolean isAdvancedEnchantmentsLoaded() {
-        // La ID del plugin AdvancedEnchantments es "AdvancedEnchantments"
         return Bukkit.getPluginManager().isPluginEnabled("AdvancedEnchantments");
     }
-    // ----------------------------------------------------------------------
+
+    public String renderMiniMessageToLegacy(String mmString) {
+        if (mmString == null) return null;
+
+        // Paso 1: Sanitiza el input de MiniMessage, convirtiendo § a & para evitar el crash del parser.
+        String sanitizedString = mmString.replace('§', '&');
+
+        // Paso 2: Deserializa el String (que ahora solo tiene tags MM y & codes) a un Component.
+        net.kyori.adventure.text.Component component = this.miniMessage.deserialize(sanitizedString);
+
+        // Paso 3: Serializa el Component a formato Ampersand (&), y luego fuerza la conversión final a Section codes (§).
+        // Esto asegura que el cliente de Minecraft (que necesita §) lo lea correctamente.
+        String legacyAmpersandString = LegacyComponentSerializer.legacyAmpersand().serialize(component);
+
+        return legacyAmpersandString.replace('&', '§');
+    }
 
     public HistoryGUI getHistoryGUI() {
         return this.historyGUI;
