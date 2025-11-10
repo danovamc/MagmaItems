@@ -1,0 +1,75 @@
+prefix: "<b><#FD9255>MAGMAITEMS</#FD9255> <dark_gray>➡</b> "
+
+bomb:
+  allowed-worlds:
+    - mina
+    - minasvip
+    - world
+
+messages:
+  no-permission: "<red>You do not have permission to use this command."
+  usage: "<gray>Usage: /magmaitem [give|reload|applyid|storage|history|checkduplicates]"
+  give-usage: "<gray>Usage: /magmaitem give <player> <item> [amount]"
+  player-not-found: "<red>Player '%player%' not found or is offline."
+  item-not-found: "<red>Item '%item%' does not exist."
+  invalid-amount: "<red>Amount must be between 1 and 64."
+  invalid-number: "<red>Invalid amount: Must be a number."
+  give-success: "<green>Successfully gave <yellow>%amount%x %item% <green>to <yellow>%player%<green>."
+  player-only: "<red>This command can only be executed by a player."
+  reload-success: "<green>Configuration reloaded successfully."
+  teleport-success: "<green>Teleported to <yellow>%player%"
+  player-offline: "<red>Player is not online."
+
+  bomb-cooldown: "§x§F§F§3§4§5§8§lDINAMITA §8➡ §f¡Debes esperar §e{time} §fantes de usar otra dinamita!"
+  bomb-sale-chat: "§x§F§F§3§4§5§8§lDINAMITA §8➡ §f¡Has vendido §e{items} §fitems por §x§5§9§f§f§2§0${money}§f!"
+  bomb-sale-title: ""
+  bomb-sale-subtitle: "§x§5§9§f§f§2§0+${money}"
+  world-not-allowed: "§x§F§F§3§4§5§8§lDINAMITA §8➡ §f¡No puedes §cusar §fdinamitas aquí!"
+
+  already-has-id: "<red>This item already has a unique ID."
+  custom-id-exists: "<red>The ID '%id%' already exists. Please choose a different one."
+  no-item-in-hand: "<red>You must hold an item in your main hand."
+  id-applied: "<green>Item has been assigned a unique ID."
+
+  storage-usage: "<gray>Usage: /magmaitem storage [save|give|list|remove]"
+
+  storage-save-usage: "<gray>Usage: /magmaitem storage save <name>"
+  storage-save-success: "<green>Item successfully saved as <yellow>'%name%'<green>."
+  storage-item-exists: "<red>An item with the name '%name%' already exists in storage."
+  storage-save-error: "<red>Failed to save item. Check console."
+
+  storage-give-usage: "<gray>Usage: /magmaitem storage give <player> <name> [--applyid]"
+  storage-item-not-found: "<red>Item '%name%' not found in storage."
+  storage-give-success: "<green>Successfully gave <yellow>1x %item% <green>from storage to <yellow>%player%<green>."
+
+  storage-remove-usage: "<gray>Usage: /magmaitem storage remove <item_name>"
+  storage-remove-success: "<green>Item <yellow>'%name%' <green>successfully removed from storage."
+
+  storage-list-header: "<gold>--- <yellow> Stored Items (%count%) <gold>---"
+  storage-list-empty: "<yellow> No items are currently stored."
+  storage-list-content: "<green>Stored Items: <white>%items%"
+
+confirmation:
+  title: "             ᴄᴏɴғɪʀᴍᴀʀ"
+  confirm-text: "<!i><#33FF33><b>CONFIRMAR"
+  confirm-lore:
+    - '<!i><dark_gray>Descripción'
+    - ''
+    - '<!i><red>⚠ ¡No podras revertir esto!'
+    - '<!i><red>¿Seguro de lo que estas haciendo?'
+    - ''
+    - '<!i><yellow>▸ ¡Click para confirmar!'
+  cancel-text: "<!i><#FF1313><b>CANCELAR"
+  cancel-lore:
+    - '<!i><dark_gray>Descripción'
+    - ''
+    - '<!i><gray> ℹ ¿Qué es esto?'
+    - '<!i><white> Podras cancelar la operación'
+    - ''
+    - '<!i><yellow>▸ ¡Click para cancelar!'
+  confirm-material: "LIME_STAINED_GLASS_PANE"
+  cancel-material: "RED_STAINED_GLASS_PANE"
+
+placeholders: []
+items: []
+custom-items: []

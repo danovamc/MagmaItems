@@ -1,0 +1,16 @@
+D:\Plugin\MagmaItems\src\main\java\dev\lujanabril\magmaItems\Commands\ItemCommand.java
+D:\Plugin\MagmaItems\src\main\java\dev\lujanabril\magmaItems\DatabaseManager.java
+D:\Plugin\MagmaItems\src\main\java\dev\lujanabril\magmaItems\GUI\HistoryGUI.java
+D:\Plugin\MagmaItems\src\main\java\dev\lujanabril\magmaItems\Listeners\BombListener.java
+D:\Plugin\MagmaItems\src\main\java\dev\lujanabril\magmaItems\Listeners\CustomItemListener.java
+D:\Plugin\MagmaItems\src\main\java\dev\lujanabril\magmaItems\Listeners\HistoryGUIListener.java
+D:\Plugin\MagmaItems\src\main\java\dev\lujanabril\magmaItems\Listeners\ItemEventListener.java
+D:\Plugin\MagmaItems\src\main\java\dev\lujanabril\magmaItems\Listeners\ItemListener.java
+D:\Plugin\MagmaItems\src\main\java\dev\lujanabril\magmaItems\Listeners\SearchChatListener.java
+D:\Plugin\MagmaItems\src\main\java\dev\lujanabril\magmaItems\Main.java
+D:\Plugin\MagmaItems\src\main\java\dev\lujanabril\magmaItems\Managers\BombManager.java
+D:\Plugin\MagmaItems\src\main\java\dev\lujanabril\magmaItems\Managers\ConfirmationManager.java
+D:\Plugin\MagmaItems\src\main\java\dev\lujanabril\magmaItems\Managers\CustomItemManager.java
+D:\Plugin\MagmaItems\src\main\java\dev\lujanabril\magmaItems\Managers\ItemManager.java
+D:\Plugin\MagmaItems\src\main\java\dev\lujanabril\magmaItems\Managers\ItemStorageManager.java
+D:\Plugin\MagmaItems\src\main\java\dev\lujanabril\magmaItems\Managers\ItemTrackingManager.java
