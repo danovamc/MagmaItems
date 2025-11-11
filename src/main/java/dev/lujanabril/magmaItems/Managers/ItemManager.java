@@ -474,21 +474,18 @@ public class ItemManager {
                 // 1. Aplicar NBT de usos
                 meta.getPersistentDataContainer().set(this.totemUsesKey, PersistentDataType.INTEGER, data.getInitialTotemUses());
 
-                // 2. Renderizar y aplicar el Lore
-                String usesLorePrefixFormat = "<!i><#777777>Usos restantes: <#FFD700>";
+                // 2. Definir el formato de la línea de usos (con el ícono ☄)
+                String usesLorePrefixFormat = "<!i><#FF3458>☄</#FF3458> <white>Usos restantes: </white><#FFD700>";
 
-                // Obtenemos la línea renderizada usando el método auxiliar de Main
-                String renderedUsesLine = plugin.renderMiniMessageToLegacy(usesLorePrefixFormat + data.getInitialTotemUses());
-
-                // Obtener el Lore como Component (moderno)
+                // 3. Obtener el Lore actual como Componentes (el método moderno)
                 List<Component> currentLoreComponents = meta.lore() != null ? meta.lore() : new ArrayList<>();
                 List<Component> finalLoreComponents = new ArrayList<>();
-                String strippedPrefix = "Usos restantes:";
+                String strippedPrefix = "Usos restantes:"; // El texto base sin el ícono ☄
 
-                // Iterar sobre los Componentes
+                // 4. Filtrar el lore existente
                 for (Component component : currentLoreComponents) {
-                    // Convertir el Component a texto plano para la comparación
-                    String strippedLine = PlainTextComponentSerializer.plainText().serialize(component);
+                    // Convertir el Component a texto plano Y ELIMINAR ESPACIOS/ICONOS AL INICIO
+                    String strippedLine = PlainTextComponentSerializer.plainText().serialize(component).trim();
 
                     // Omitimos la línea antigua de usos si existe
                     if (!strippedLine.startsWith(strippedPrefix)) {
@@ -496,9 +493,10 @@ public class ItemManager {
                     }
                 }
 
-                // Añadimos la nueva línea de usos como Component
+                // 5. Añadimos la nueva línea de usos (como Component) al final
                 finalLoreComponents.add(plugin.getMiniMessage().deserialize(usesLorePrefixFormat + data.getInitialTotemUses()));
 
+                // 6. Guardar el lore como List<Component>
                 meta.lore(finalLoreComponents); // Usar meta.lore() (moderno)
 
                 item.setItemMeta(meta);

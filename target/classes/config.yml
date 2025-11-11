@@ -7,8 +7,19 @@ bomb:
 
 totem:
   allowed-worlds:
-    - mina
-    - minasvip
+    - lobby
+    - minapvp
+    - potpvp
+    - world
+  sounds:
+    use:
+      name: "BLOCK_BEACON_POWER_SELECT"
+      volume: 1.0
+      pitch: 1.2
+    consumed:
+      name: "ENTITY_ITEM_BREAK"
+      volume: 1.0
+      pitch: 0.8
 
 messages:
   no-permission: "<red>No tienes permiso para usar este comando."

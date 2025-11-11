@@ -5,7 +5,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.GameMode;
-import org.bukkit.Material; // Importar Material
+import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
@@ -32,7 +32,7 @@ public class TotemListener implements Listener {
     private final NamespacedKey magmaItemKey;
     private final NamespacedKey usesKey;
 
-    private static final String USES_LORE_PREFIX_FORMAT = "<!i><#777777>Usos restantes: <#FFD700>";
+    private static final String USES_LORE_PREFIX_FORMAT = "<!i><#FF3458>☄</#FF3458> <white>Usos restantes: </white><#FFD700>";
     private static final String USES_LORE_STRIPPED_PREFIX = "Usos restantes:";
     private static final PlainTextComponentSerializer PLAIN_TEXT_SERIALIZER = PlainTextComponentSerializer.plainText();
 
@@ -42,9 +42,20 @@ public class TotemListener implements Listener {
         this.usesKey = new NamespacedKey(plugin, "totem_uses");
     }
 
-    /**
-     * Verifica si el tótem está permitido en el mundo actual.
-     */
+    private boolean isVanillaTotem(ItemStack item) {
+        if (item == null || item.getType() != Material.TOTEM_OF_UNDYING) {
+            return false;
+        }
+        if (!item.hasItemMeta()) {
+            return true;
+        }
+        PersistentDataContainer container = item.getItemMeta().getPersistentDataContainer();
+        if (container.has(usesKey, PersistentDataType.INTEGER)) {
+            return false;
+        }
+        return true;
+    }
+
     private boolean isTotemAllowedInWorld(String worldName) {
         List<String> allowedWorlds = plugin.getConfig().getStringList("totem.allowed-worlds");
         if (allowedWorlds.isEmpty()) {
@@ -54,7 +65,7 @@ public class TotemListener implements Listener {
     }
 
     /**
-     * Lógica principal: Intercepta el daño letal y ejecuta la salvación inmediatamente.
+     * Lógica principal: Intercepta el daño letal.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onFatalDamage(EntityDamageEvent event) {
@@ -74,34 +85,37 @@ public class TotemListener implements Listener {
 
         if (player.getHealth() - event.getFinalDamage() <= 0) {
 
-            // <<<< LÓGICA DE PRIORIDAD INVERTIDA (CORREGIDA) >>>>
-            // 1. Buscar NUESTRO tótem multiuso PRIMERO.
+            PlayerInventory inventory = player.getInventory();
+            ItemStack mainHand = inventory.getItemInMainHand();
+            ItemStack offHand = inventory.getItemInOffHand();
+
+            if (isVanillaTotem(mainHand) || isVanillaTotem(offHand)) {
+                return;
+            }
+
             int totemSlot = findMultiUseTotemSlot(player);
 
             if (totemSlot != -1) {
-                // 2. Si lo encontramos, cancelamos el evento INMEDIATAMENTE.
                 event.setCancelled(true);
 
-                player.setHealth(player.getMaxHealth());
+                player.setHealth(10.0);
                 player.setFireTicks(0);
 
                 ItemStack totem = player.getInventory().getItem(totemSlot);
                 String itemId = plugin.getItemManager().getItemId(totem);
                 applyTotemEffects(player, itemId);
 
-                player.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING, player.getLocation().add(0, 1, 0), 50, 0.5, 0.5, 0.5, 0.1);
+                // Aplicar partículas desde el config
+                spawnTotemParticles(player);
 
                 updateTotemUses(player, totemSlot);
             }
-            // 3. Si no se encontró un tótem multiuso (totemSlot == -1),
-            // no hacemos nada (no cancelamos el evento). La lógica de Vainilla
-            // se ejecutará y consumirá el tótem normal de la mano secundaria.
         }
     }
 
 
     /**
-     * Actúa como capa de seguridad si el EntityDamageEvent fue omitido o cancelado.
+     * Fallback
      */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPlayerDeath(PlayerDeathEvent event) {
@@ -111,23 +125,30 @@ public class TotemListener implements Listener {
             return;
         }
 
-        // <<<< LÓGICA DE PRIORIDAD INVERTIDA (FALLBACK) >>>>
+        PlayerInventory inventory = player.getInventory();
+        ItemStack mainHand = inventory.getItemInMainHand();
+        ItemStack offHand = inventory.getItemInOffHand();
+
+        if (isVanillaTotem(mainHand) || isVanillaTotem(offHand)) {
+            return;
+        }
+
         int totemSlot = findMultiUseTotemSlot(player);
 
         if (totemSlot != -1) {
             event.setCancelled(true);
-            player.setHealth(20.0);
+            player.setHealth(10.0);
             player.setFireTicks(0);
 
             ItemStack totem = player.getInventory().getItem(totemSlot);
             String itemId = plugin.getItemManager().getItemId(totem);
             applyTotemEffects(player, itemId);
 
-            player.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING, player.getLocation().add(0, 1, 0), 50, 0.5, 0.5, 0.5, 0.1);
+            // Aplicar partículas desde el config
+            spawnTotemParticles(player);
 
             updateTotemUses(player, totemSlot);
         }
-        // Si no se encuentra, dejamos que el jugador muera (o que el tótem de vainilla lo salve si la lógica de onFatalDamage falló).
     }
 
     /**
@@ -210,51 +231,101 @@ public class TotemListener implements Listener {
         String message;
 
         if (newUses <= 0) {
+            // Eliminación final
             player.getInventory().setItem(totemSlot, null);
             message = plugin.getConfig().getString("messages.totem-consumed",
                     "<red>El <gold>Tótem de Usos Múltiples</gold> se ha consumido por completo.");
 
-            player.playSound(player.getLocation(), Sound.ENTITY_ITEM_BREAK, 1.0F, 0.8F);
+            playSoundFromConfig(player, "totem.sounds.consumed", Sound.ENTITY_ITEM_BREAK, 1.0F, 0.8F);
 
         } else {
+            // Actualizar NBT
             container.set(usesKey, PersistentDataType.INTEGER, newUses);
 
+            // 1. Definir la nueva línea de contador como Component
             String newCounterLineFormat = USES_LORE_PREFIX_FORMAT + newUses;
+            Component newCounterComponent = plugin.getMiniMessage().deserialize(newCounterLineFormat);
+
+            // 2. Obtener el lore actual como Componentes (moderno)
             List<Component> currentLoreComponents = meta.hasLore() && meta.lore() != null ? meta.lore() : new ArrayList<>();
             List<Component> finalClientLoreComponents = new ArrayList<>();
-            boolean counterFound = false;
 
+            // 3. FILTRAR: Copiar solo las líneas que NO son contadores.
             for (Component component : currentLoreComponents) {
 
+                // Convertir el Component a texto plano.
                 String strippedLine = PLAIN_TEXT_SERIALIZER.serialize(component);
 
-                if (strippedLine.startsWith(USES_LORE_STRIPPED_PREFIX) && !counterFound) {
-                    Component renderedCounterComponent = plugin.getMiniMessage().deserialize(newCounterLineFormat);
-                    finalClientLoreComponents.add(renderedCounterComponent);
-                    counterFound = true;
-                } else {
-                    finalClientLoreComponents.add(component);
+                // Buscar la posición de la subcadena "Usos restantes"
+                int index = strippedLine.indexOf(USES_LORE_STRIPPED_PREFIX);
+
+                // Si se encuentra "Usos restantes" Y está cerca del inicio (índice 0 a 5), es nuestra línea.
+                if (index != -1 && index < 5) {
+                    // Si ES un contador, se ignora (no se añade a la nueva lista).
+                    continue;
                 }
+
+                // Si la línea NO es un contador, la mantenemos.
+                finalClientLoreComponents.add(component);
             }
 
-            if (!counterFound) {
-                Component renderedCounterComponent = plugin.getMiniMessage().deserialize(newCounterLineFormat);
-                finalClientLoreComponents.add(renderedCounterComponent);
-            }
+            // 4. Añadir: Añadimos la nueva línea de usos (ej. 9) al final de la lista filtrada.
+            finalClientLoreComponents.add(newCounterComponent);
 
-            meta.lore(finalClientLoreComponents);
+            meta.lore(finalClientLoreComponents); // Guardar la List<Component>
             liveTotem.setItemMeta(meta);
 
+            // Forzar la reinserción del ítem actualizado en el slot.
             player.getInventory().setItem(totemSlot, liveTotem);
 
+            // Mensaje de uso exitoso
             String saveMsg = plugin.getConfig().getString("messages.totem-save",
                     "<green>¡El <gold>Tótem de Usos Múltiples</gold> te ha salvado! <gray>Usos restantes: <yellow>{uses}");
             message = saveMsg.replace("{uses}", String.valueOf(newUses));
 
-            player.playSound(player.getLocation(), Sound.BLOCK_BEACON_POWER_SELECT, 1.0F, 1.2F);
+            playSoundFromConfig(player, "totem.sounds.use", Sound.BLOCK_BEACON_POWER_SELECT, 1.0F, 1.2F);
         }
 
         player.sendMessage(plugin.getMiniMessage().deserialize(message));
         player.updateInventory();
+    }
+
+    /**
+     * <<<< NUEVO MÉTODO AUXILIAR PARA SONIDOS >>>>
+     * Reproduce un sonido basado en la config.yml, con valores por defecto.
+     */
+    private void playSoundFromConfig(Player player, String configPath, Sound defaultSound, float defaultVolume, float defaultPitch) {
+        try {
+            String soundName = plugin.getConfig().getString(configPath + ".name", defaultSound.name());
+            float volume = (float) plugin.getConfig().getDouble(configPath + ".volume", defaultVolume);
+            float pitch = (float) plugin.getConfig().getDouble(configPath + ".pitch", defaultPitch);
+
+            Sound sound = Sound.valueOf(soundName.toUpperCase());
+            player.playSound(player.getLocation(), sound, volume, pitch);
+
+        } catch (Exception e) {
+            plugin.getLogger().warning("[TotemListener] Error al reproducir sonido desde la config '" + configPath + "'. Usando sonido por defecto.");
+            player.playSound(player.getLocation(), defaultSound, defaultVolume, defaultPitch);
+        }
+    }
+
+    /**
+     * <<<< NUEVO MÉTODO AUXILIAR PARA PARTÍCULAS >>>>
+     * Genera partículas basadas en la config.yml.
+     */
+    private void spawnTotemParticles(Player player) {
+        try {
+            String particleName = plugin.getConfig().getString("totem.particles.type", "TOTEM_OF_UNDYING");
+            int count = plugin.getConfig().getInt("totem.particles.count", 50);
+            double offset = plugin.getConfig().getDouble("totem.particles.offset", 0.5);
+            double speed = plugin.getConfig().getDouble("totem.particles.speed", 0.1);
+
+            Particle particle = Particle.valueOf(particleName.toUpperCase());
+            player.getWorld().spawnParticle(particle, player.getLocation().add(0, 1, 0), count, offset, offset, offset, speed);
+
+        } catch (Exception e) {
+            plugin.getLogger().warning("[TotemListener] Error al generar partículas desde la config. Usando partículas por defecto.");
+            player.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING, player.getLocation().add(0, 1, 0), 50, 0.5, 0.5, 0.5, 0.1);
+        }
     }
 }
