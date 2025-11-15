@@ -15,6 +15,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -24,7 +25,10 @@ import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 public class TotemListener implements Listener {
 
@@ -32,8 +36,10 @@ public class TotemListener implements Listener {
     private final NamespacedKey magmaItemKey;
     private final NamespacedKey usesKey;
 
-    private static final String USES_LORE_PREFIX_FORMAT = "<!i><#FF3458>☄</#FF3458> <white>Usos restantes: </white><#FFD700>";
-    private static final String USES_LORE_STRIPPED_PREFIX = "Usos restantes:";
+    // <<<< MODIFICADO: Ahora guarda una LISTA de tótems a restaurar >>>>
+    private final Map<UUID, List<ItemStack>> totemToRestore = new HashMap<>();
+
+    private static final String USES_LORE_STRIPPED_PREFIX = "• Usos ";
     private static final PlainTextComponentSerializer PLAIN_TEXT_SERIALIZER = PlainTextComponentSerializer.plainText();
 
     public TotemListener(Main plugin) {
@@ -56,6 +62,23 @@ public class TotemListener implements Listener {
         return true;
     }
 
+    // <<<< NUEVO: Método para chequear si un item es un tótem custom con usos >>>>
+    private boolean isCustomTotem(ItemStack item) {
+        if (item == null || item.getType() != Material.TOTEM_OF_UNDYING) {
+            return false;
+        }
+        if (!item.hasItemMeta()) {
+            return false;
+        }
+
+        PersistentDataContainer container = item.getItemMeta().getPersistentDataContainer();
+        if (container.has(magmaItemKey, PersistentDataType.STRING) && container.has(usesKey, PersistentDataType.INTEGER)) {
+            return container.getOrDefault(usesKey, PersistentDataType.INTEGER, 0) > 0;
+        }
+        return false;
+    }
+
+
     private boolean isTotemAllowedInWorld(String worldName) {
         List<String> allowedWorlds = plugin.getConfig().getStringList("totem.allowed-worlds");
         if (allowedWorlds.isEmpty()) {
@@ -66,8 +89,9 @@ public class TotemListener implements Listener {
 
     /**
      * Lógica principal: Intercepta el daño letal.
+     * Prioridad HIGHEST para ejecutarse antes que otros plugins y vanilla.
      */
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onFatalDamage(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player)) {
             return;
@@ -75,7 +99,7 @@ public class TotemListener implements Listener {
 
         Player player = (Player) event.getEntity();
 
-        if (!isTotemAllowedInWorld(player.getWorld().getName())) {
+        if (event.getCause() == EntityDamageEvent.DamageCause.CUSTOM) {
             return;
         }
 
@@ -83,73 +107,88 @@ public class TotemListener implements Listener {
             return;
         }
 
+        // Solo nos importa si el daño es fatal
         if (player.getHealth() - event.getFinalDamage() <= 0) {
 
             PlayerInventory inventory = player.getInventory();
             ItemStack mainHand = inventory.getItemInMainHand();
             ItemStack offHand = inventory.getItemInOffHand();
 
-            if (isVanillaTotem(mainHand) || isVanillaTotem(offHand)) {
+            // 1. Si es un tótem vanilla REAL en CUALQUIER MANO, dejamos que Minecraft se encargue.
+            if (isVanillaTotem(offHand) || isVanillaTotem(mainHand)) {
                 return;
             }
 
-            int totemSlot = findMultiUseTotemSlot(player);
+            // 2. <<<< LÓGICA MODIFICADA >>>>
+            // Comprobamos si el mundo está permitido
+            if (isTotemAllowedInWorld(player.getWorld().getName())) {
 
-            if (totemSlot != -1) {
-                event.setCancelled(true);
+                // 3a. MUNDO PERMITIDO: Buscamos un tótem para usar, respetando la prioridad
+                int totemSlot = findPriorityTotemSlot(player);
 
-                player.setHealth(10.0);
-                player.setFireTicks(0);
+                if (totemSlot != -1) {
+                    // ¡Encontrado! Salvamos al jugador
+                    event.setCancelled(true); // Cancela el daño fatal
 
-                ItemStack totem = player.getInventory().getItem(totemSlot);
-                String itemId = plugin.getItemManager().getItemId(totem);
-                applyTotemEffects(player, itemId);
+                    player.setHealth(10.0);
+                    player.setFireTicks(0);
 
-                // Aplicar partículas desde el config
-                spawnTotemParticles(player);
+                    // Pasa el slot específico para consumir el tótem correcto
+                    ItemStack totem = player.getInventory().getItem(totemSlot);
+                    String itemId = plugin.getItemManager().getItemId(totem);
+                    applyTotemEffects(player, itemId);
 
-                updateTotemUses(player, totemSlot);
+                    spawnTotemParticles(player);
+                    updateTotemUses(player, totemSlot); // Consume un uso
+                }
+                // Si no se encuentra un tótem custom, no hacemos nada y dejamos que muera.
+
+            } else {
+                // 3b. MUNDO NO PERMITIDO:
+                // Debemos encontrar y quitar TODOS los tótems custom para evitar el pop vanilla.
+
+                Map<Integer, ItemStack> totemsToRemove = findAllCustomTotems(player);
+
+                if (totemsToRemove.isEmpty()) {
+                    // No hay tótems custom, dejamos que muera.
+                    return;
+                }
+
+                // Guardamos TODOS los tótems para restaurarlos
+                totemToRestore.put(player.getUniqueId(), new ArrayList<>(totemsToRemove.values()));
+
+                // Quitamos TODOS los tótems del inventario AHORA
+                for (Integer slot : totemsToRemove.keySet()) {
+                    player.getInventory().setItem(slot, null);
+                }
+
+                // NO cancelamos el evento. El jugador ahora morirá
+                // 100% normal, sin tótems, y DeluxeCombat lo anunciará UNA vez.
             }
         }
     }
 
 
     /**
-     * Fallback
+     * <<<< EVENTO onPlayerRespawn MODIFICADO >>>>
+     * Ahora restaura una LISTA de tótems.
      */
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onPlayerDeath(PlayerDeathEvent event) {
-        Player player = (Player) event.getEntity();
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerRespawn(PlayerRespawnEvent event) {
+        Player player = event.getPlayer();
 
-        if (!isTotemAllowedInWorld(player.getWorld().getName())) {
-            return;
-        }
+        List<ItemStack> totems = totemToRestore.remove(player.getUniqueId());
 
-        PlayerInventory inventory = player.getInventory();
-        ItemStack mainHand = inventory.getItemInMainHand();
-        ItemStack offHand = inventory.getItemInOffHand();
-
-        if (isVanillaTotem(mainHand) || isVanillaTotem(offHand)) {
-            return;
-        }
-
-        int totemSlot = findMultiUseTotemSlot(player);
-
-        if (totemSlot != -1) {
-            event.setCancelled(true);
-            player.setHealth(10.0);
-            player.setFireTicks(0);
-
-            ItemStack totem = player.getInventory().getItem(totemSlot);
-            String itemId = plugin.getItemManager().getItemId(totem);
-            applyTotemEffects(player, itemId);
-
-            // Aplicar partículas desde el config
-            spawnTotemParticles(player);
-
-            updateTotemUses(player, totemSlot);
+        if (totems != null && !totems.isEmpty()) {
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                // Devuelve todos los tótems que se quitaron
+                for (ItemStack totem : totems) {
+                    player.getInventory().addItem(totem);
+                }
+            }, 1L);
         }
     }
+
 
     /**
      * Parsea y aplica los efectos de poción desde la configuración del ítem.
@@ -187,27 +226,71 @@ public class TotemListener implements Listener {
         }
     }
 
+    // <<<< MÉTODO `findMultiUseTotemSlot` ELIMINADO >>>>
+    // (Reemplazado por `findPriorityTotemSlot` y `findAllCustomTotems`)
+
 
     /**
-     * Busca un tótem multiuso y devuelve el SLOT de inventario donde se encuentra.
+     * <<<< NUEVO MÉTODO >>>>
+     * Busca un tótem custom con usos, respetando la prioridad de Vanilla:
+     * 1. Mano Secundaria
+     * 2. Mano Principal
+     * 3. Hotbar (de izquierda a derecha)
+     * 4. Inventario (de arriba a abajo, izquierda a derecha)
      */
-    private int findMultiUseTotemSlot(Player player) {
-        ItemStack[] contents = player.getInventory().getContents();
-        for (int i = 0; i < contents.length; i++) {
-            ItemStack item = contents[i];
-            if (item != null && item.hasItemMeta()) {
-                PersistentDataContainer container = item.getItemMeta().getPersistentDataContainer();
+    private int findPriorityTotemSlot(Player player) {
+        PlayerInventory inv = player.getInventory();
 
-                if (container.has(magmaItemKey, PersistentDataType.STRING) && container.has(usesKey, PersistentDataType.INTEGER)) {
-                    int uses = container.getOrDefault(usesKey, PersistentDataType.INTEGER, 0);
-                    if (uses > 0) {
-                        return i; // Devuelve el slot
-                    }
-                }
+        // 1. Mano Secundaria (Slot 40)
+        if (isCustomTotem(inv.getItemInOffHand())) {
+            return 40;
+        }
+
+        // 2. Mano Principal (Slot actual)
+        if (isCustomTotem(inv.getItemInMainHand())) {
+            return inv.getHeldItemSlot();
+        }
+
+        // 3. Hotbar (Slots 0-8)
+        for (int i = 0; i < 9; i++) {
+            if (i == inv.getHeldItemSlot()) continue; // Ya chequeamos la mano principal
+            if (isCustomTotem(inv.getItem(i))) {
+                return i;
             }
         }
+
+        // 4. Inventario principal (Slots 9-35)
+        for (int i = 9; i <= 35; i++) {
+            if (isCustomTotem(inv.getItem(i))) {
+                return i;
+            }
+        }
+
         return -1; // No encontrado
     }
+
+    /**
+     * <<<< NUEVO MÉTODO >>>>
+     * Busca TODOS los tótems custom con usos en el inventario.
+     * Devuelve un Mapa de <Slot, ItemStack>
+     */
+    private Map<Integer, ItemStack> findAllCustomTotems(Player player) {
+        Map<Integer, ItemStack> totems = new HashMap<>();
+        ItemStack[] contents = player.getInventory().getContents(); // Incluye armadura, inventario y manos
+
+        // Revisamos inventario principal (0-35) y mano secundaria (40)
+        for (int i = 0; i < contents.length; i++) {
+            // El slot 36-39 son armadura. El 40 es offhand.
+            if (i >= 36 && i <= 39) continue;
+
+            ItemStack item = contents[i];
+            if (isCustomTotem(item)) {
+                totems.put(i, item);
+            }
+        }
+        return totems;
+    }
+
 
     /**
      * Función crítica: Actualiza el ítem directamente en el slot del inventario.
@@ -242,43 +325,43 @@ public class TotemListener implements Listener {
             // Actualizar NBT
             container.set(usesKey, PersistentDataType.INTEGER, newUses);
 
-            // 1. Definir la nueva línea de contador como Component
-            String newCounterLineFormat = USES_LORE_PREFIX_FORMAT + newUses;
-            Component newCounterComponent = plugin.getMiniMessage().deserialize(newCounterLineFormat);
-
-            // 2. Obtener el lore actual como Componentes (moderno)
+            // LÓGICA DE ACTUALIZACIÓN DE LORE CORREGIDA
             List<Component> currentLoreComponents = meta.hasLore() && meta.lore() != null ? meta.lore() : new ArrayList<>();
             List<Component> finalClientLoreComponents = new ArrayList<>();
 
-            // 3. FILTRAR: Copiar solo las líneas que NO son contadores.
+            // Iterar y REEMPLAZAR la línea de usos
             for (Component component : currentLoreComponents) {
 
-                // Convertir el Component a texto plano.
-                String strippedLine = PLAIN_TEXT_SERIALIZER.serialize(component);
+                String strippedLine = PLAIN_TEXT_SERIALIZER.serialize(component).trim();
 
-                // Buscar la posición de la subcadena "Usos restantes"
-                int index = strippedLine.indexOf(USES_LORE_STRIPPED_PREFIX);
+                if (strippedLine.startsWith(USES_LORE_STRIPPED_PREFIX)) {
+                    String originalMiniMessage = plugin.getMiniMessage().serialize(component);
 
-                // Si se encuentra "Usos restantes" Y está cerca del inicio (índice 0 a 5), es nuestra línea.
-                if (index != -1 && index < 5) {
-                    // Si ES un contador, se ignora (no se añade a la nueva lista).
-                    continue;
+                    // CORRECCIÓN: Reemplazar la ÚLTIMA instancia del número de usos
+                    String usesAsString = String.valueOf(currentUses);
+                    int lastIndex = originalMiniMessage.lastIndexOf(usesAsString);
+
+                    if (lastIndex != -1) {
+                        String before = originalMiniMessage.substring(0, lastIndex);
+                        String after = originalMiniMessage.substring(lastIndex + usesAsString.length());
+                        String updatedMiniMessage = before + newUses + after;
+
+                        finalClientLoreComponents.add(plugin.getMiniMessage().deserialize(updatedMiniMessage));
+                    } else {
+                        finalClientLoreComponents.add(component);
+                    }
+
+                } else {
+                    finalClientLoreComponents.add(component);
                 }
-
-                // Si la línea NO es un contador, la mantenemos.
-                finalClientLoreComponents.add(component);
             }
 
-            // 4. Añadir: Añadimos la nueva línea de usos (ej. 9) al final de la lista filtrada.
-            finalClientLoreComponents.add(newCounterComponent);
 
-            meta.lore(finalClientLoreComponents); // Guardar la List<Component>
+            meta.lore(finalClientLoreComponents);
             liveTotem.setItemMeta(meta);
 
-            // Forzar la reinserción del ítem actualizado en el slot.
             player.getInventory().setItem(totemSlot, liveTotem);
 
-            // Mensaje de uso exitoso
             String saveMsg = plugin.getConfig().getString("messages.totem-save",
                     "<green>¡El <gold>Tótem de Usos Múltiples</gold> te ha salvado! <gray>Usos restantes: <yellow>{uses}");
             message = saveMsg.replace("{uses}", String.valueOf(newUses));
@@ -291,7 +374,6 @@ public class TotemListener implements Listener {
     }
 
     /**
-     * <<<< NUEVO MÉTODO AUXILIAR PARA SONIDOS >>>>
      * Reproduce un sonido basado en la config.yml, con valores por defecto.
      */
     private void playSoundFromConfig(Player player, String configPath, Sound defaultSound, float defaultVolume, float defaultPitch) {
@@ -310,7 +392,6 @@ public class TotemListener implements Listener {
     }
 
     /**
-     * <<<< NUEVO MÉTODO AUXILIAR PARA PARTÍCULAS >>>>
      * Genera partículas basadas en la config.yml.
      */
     private void spawnTotemParticles(Player player) {

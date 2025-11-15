@@ -109,10 +109,22 @@ public class ItemManager {
 
                     // --- 1. CAPTURAR EL LORE CUSTOM ORIGINAL PERO NO APLICARLO AÚN ---
                     List<Component> originalCustomLore = new ArrayList();
+                    // <<<< MODIFICACIÓN: LEER TOTEM-USES ANTES DE PROCESAR EL LORE >>>>
+                    int totemUses = section.getInt("totem-uses", 0);
+
                     for(String line : section.getStringList("lore")) {
                         String lineWithReset = "<!italic>" + line;
+
+                        // <<<< NUEVO: REEMPLAZAR PLACEHOLDER SI ES UN TOTEM >>>>
+                        if (totemUses > 0) {
+                            lineWithReset = lineWithReset.replace("{uses}", String.valueOf(totemUses));
+                        }
+                        // <<<< FIN NUEVO >>>>
+
                         originalCustomLore.add(MiniMessage.miniMessage().deserialize(lineWithReset));
                     }
+                    // <<<< FIN MODIFICACIÓN >>>>
+
 
                     // *** SE ELIMINA el meta.lore(lore) INICIAL aquí ***
 
@@ -269,12 +281,19 @@ public class ItemManager {
                     boolean interactable = section.getBoolean("interactable", true);
 
                     // <<<< LECTURA DE CAMPOS TOTEM >>>>
-                    int totemUses = section.getInt("totem-uses", 0);
+                    // int totemUses = section.getInt("totem-uses", 0); // Ya se leyó arriba
                     List<String> totemEffects = section.getStringList("totem-effects");
                     // <<<< FIN LECTURA >>>>
 
                     // APLICAR EL IDENTIFICADOR MAGMA_ITEM (PDC)
                     meta.getPersistentDataContainer().set(this.key, PersistentDataType.STRING, itemId);
+
+                    // <<<< NUEVO: APLICAR NBT DE USOS DE TOTEM SI ES NECESARIO >>>>
+                    if (totemUses > 0) {
+                        meta.getPersistentDataContainer().set(this.totemUsesKey, PersistentDataType.INTEGER, totemUses);
+                    }
+                    // <<<< FIN NUEVO >>>>
+
 
                     // ESTABLECER LA META UNA SOLA VEZ AL FINAL DE TODA LA LÓGICA
                     item.setItemMeta(meta);
@@ -466,7 +485,10 @@ public class ItemManager {
 
         ItemStack item = data.item.clone();
 
+        // <<<< BLOQUE MODIFICADO >>>>
         // LÓGICA DE INICIALIZACIÓN AUTOMÁTICA DEL TOTEM
+        // Esto ahora solo aplica el NBT y reemplaza el placeholder {uses}
+        // Asume que el lore YA está en el ítem (desde data.item.clone())
         if (data.getInitialTotemUses() > 0) {
             ItemMeta meta = item.getItemMeta();
             if (meta != null) {
@@ -474,34 +496,34 @@ public class ItemManager {
                 // 1. Aplicar NBT de usos
                 meta.getPersistentDataContainer().set(this.totemUsesKey, PersistentDataType.INTEGER, data.getInitialTotemUses());
 
-                // 2. Definir el formato de la línea de usos (con el ícono ☄)
-                String usesLorePrefixFormat = "<!i><#FF3458>☄</#FF3458> <white>Usos restantes: </white><#FFD700>";
+                // 2. Definir el placeholder a buscar
+                String usesPlaceholder = "{uses}";
 
-                // 3. Obtener el Lore actual como Componentes (el método moderno)
+                // 3. Obtener el Lore actual como Componentes
                 List<Component> currentLoreComponents = meta.lore() != null ? meta.lore() : new ArrayList<>();
                 List<Component> finalLoreComponents = new ArrayList<>();
-                String strippedPrefix = "Usos restantes:"; // El texto base sin el ícono ☄
 
-                // 4. Filtrar el lore existente
+                // 4. Iterar y reemplazar el placeholder
                 for (Component component : currentLoreComponents) {
-                    // Convertir el Component a texto plano Y ELIMINAR ESPACIOS/ICONOS AL INICIO
-                    String strippedLine = PlainTextComponentSerializer.plainText().serialize(component).trim();
+                    // Serializar a MiniMessage para encontrar el placeholder
+                    String miniMessageLine = plugin.getMiniMessage().serialize(component);
 
-                    // Omitimos la línea antigua de usos si existe
-                    if (!strippedLine.startsWith(strippedPrefix)) {
-                        finalLoreComponents.add(component); // Mantiene las líneas originales
+                    // Reemplazar el placeholder
+                    if (miniMessageLine.contains(usesPlaceholder)) {
+                        String updatedLine = miniMessageLine.replace(usesPlaceholder, String.valueOf(data.getInitialTotemUses()));
+                        finalLoreComponents.add(plugin.getMiniMessage().deserialize(updatedLine));
+                    } else {
+                        finalLoreComponents.add(component);
                     }
                 }
 
-                // 5. Añadimos la nueva línea de usos (como Component) al final
-                finalLoreComponents.add(plugin.getMiniMessage().deserialize(usesLorePrefixFormat + data.getInitialTotemUses()));
-
-                // 6. Guardar el lore como List<Component>
-                meta.lore(finalLoreComponents); // Usar meta.lore() (moderno)
+                // 5. Guardar el lore como List<Component>
+                meta.lore(finalLoreComponents);
 
                 item.setItemMeta(meta);
             }
         }
+        // <<<< FIN BLOQUE MODIFICADO >>>>
 
         return item;
     }
