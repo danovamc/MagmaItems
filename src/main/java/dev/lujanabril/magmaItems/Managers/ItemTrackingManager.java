@@ -23,6 +23,8 @@ public class ItemTrackingManager {
     private final Main plugin;
     private final File trackingFile;
     private FileConfiguration trackingConfig;
+    private final File deletionLogFile;
+    private FileConfiguration deletionLogConfig;
     private final NamespacedKey magmaItemIdKey;
     private final NamespacedKey magmaItemKey;
     private Map<String, String> itemTrackingCache = new HashMap();
@@ -32,7 +34,14 @@ public class ItemTrackingManager {
         this.magmaItemIdKey = new NamespacedKey(plugin, "magma_item_id");
         this.magmaItemKey = new NamespacedKey(plugin, "magma_item");
         this.trackingFile = new File(plugin.getDataFolder(), "item-tracking.yml");
+
+        File logsFolder = new File(plugin.getDataFolder(), "logs"); // Crea la carpeta /logs/
+        if (!logsFolder.exists()) {
+            logsFolder.mkdirs();
+        }
+        this.deletionLogFile = new File(logsFolder, "deletions_log.yml");
         this.loadTracking();
+        this.loadDeletionLog();
     }
 
     public void loadTracking() {
@@ -50,6 +59,45 @@ public class ItemTrackingManager {
 
     public void reloadTracking() {
         this.loadTracking();
+    }
+
+    public void loadDeletionLog() {
+        if (!this.deletionLogFile.exists()) {
+            try {
+                this.deletionLogFile.createNewFile();
+            } catch (IOException e) {
+                this.plugin.getLogger().log(Level.SEVERE, "No se pudo crear el archivo de log de eliminaciones", e);
+            }
+        }
+        this.deletionLogConfig = YamlConfiguration.loadConfiguration(this.deletionLogFile);
+    }
+
+    // Guarda el log de eliminaciones
+    public void saveDeletionLog() {
+        try {
+            this.deletionLogConfig.save(this.deletionLogFile);
+        } catch (IOException e) {
+            this.plugin.getLogger().log(Level.SEVERE, "No se pudo guardar el archivo de log de eliminaciones", e);
+        }
+    }
+
+    public void logDeletion(Player remover, ItemInfo itemInfo) {
+        if (itemInfo == null) return;
+
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss");
+        String timestamp = sdf.format(new Date());
+        String logKey = timestamp + "_" + itemInfo.getItemId(); // Clave única para el log
+
+        String path = "deletions." + logKey;
+        this.deletionLogConfig.set(path + ".deleter-name", remover.getName());
+        this.deletionLogConfig.set(path + ".deleter-uuid", remover.getUniqueId().toString());
+        this.deletionLogConfig.set(path + ".item-id", itemInfo.getItemId());
+        this.deletionLogConfig.set(path + ".item-name", itemInfo.getItemName());
+        this.deletionLogConfig.set(path + ".original-owner", itemInfo.getOriginalOwnerName());
+        this.deletionLogConfig.set(path + ".last-holder", itemInfo.getCurrentOwnerName());
+        this.deletionLogConfig.set(path + ".deletion-date", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()));
+
+        this.saveDeletionLog();
     }
 
     public void saveTracking() {

@@ -178,55 +178,59 @@ public class ItemManager {
                                 level = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 1;
                             } catch (NumberFormatException ignored) {}
 
-                            String bukkitEnchantName = enchantName.toUpperCase();
                             boolean appliedSuccessfully = false;
 
-                            // 1. INTENTAR CON BUKKIT (VANILLA)
-                            try {
-                                Enchantment enchant = Enchantment.getByName(bukkitEnchantName);
-                                if (enchant != null) {
-                                    // 🟢 CAMBIO CLAVE: Usar addUnsafeEnchantment para altos niveles
-                                    item.addUnsafeEnchantment(enchant, level);
+                            // 1. INTENTAR PRIMERO CON ADVANCEDENCHANTMENTS (PARA CUSTOM Y VANILLA)
+                            if (this.plugin.isAdvancedEnchantmentsLoaded()) {
+                                try {
+                                    ItemStack originalItem = item.clone();
 
-                                    // Sincronizar 'meta' para reflejar los encantamientos aplicados
-                                    meta = item.getItemMeta();
-                                    appliedSuccessfully = true;
+                                    // Dejar que AE API maneje todo.
+                                    // El 'true' (hideFromLore) es correcto ya que tienes lore custom.
+                                    item = AEAPI.applyEnchant(enchantName, level, originalItem, true);
+
+                                    if (!originalItem.equals(item)) {
+                                        // AE lo aplicó (ya sea custom o vanilla).
+                                        meta = item.getItemMeta();
+                                        appliedSuccessfully = true;
+                                    }
+                                    // Si AE no lo aplicó (originalItem.equals(item)), 'appliedSuccessfully' sigue false
+                                    // y el bloque de fallback (Bukkit) se ejecutará.
+
+                                } catch (Exception e) {
+                                    this.plugin.getLogger().warning("Error applying enchant via AdvancedEnchantment '" + enchantName + "': " + e.getMessage());
+                                    // Dejar appliedSuccessfully = false para que intente el fallback de Bukkit
                                 }
-                            } catch (Exception e) {
-                                this.plugin.getLogger().warning("Error applying vanilla enchantment via Bukkit: " + enchantName);
                             }
 
-                            // 2. FALLBACK: INTENTAR CON ADVANCEDENCHANTMENTS (CUSTOM)
+                            // 2. FALLBACK: INTENTAR CON BUKKIT (VANILLA)
+                            // Esto solo se ejecutará si AE no está cargado, o si AE falló en aplicar el enchant.
                             if (!appliedSuccessfully) {
-                                if (this.plugin.isAdvancedEnchantmentsLoaded()) {
-                                    try {
-                                        ItemStack originalItem = item.clone();
+                                try {
+                                    String bukkitEnchantName = enchantName.toUpperCase();
+                                    Enchantment enchant = Enchantment.getByName(bukkitEnchantName);
 
-                                        // Aplicar el encantamiento custom, indicando TRUE para ocultar el LORE.
-                                        item = AEAPI.applyEnchant(enchantName, level, originalItem, true);
+                                    if (enchant != null) {
+                                        // 🟢 CAMBIO CLAVE: Usar addUnsafeEnchantment para altos niveles
+                                        item.addUnsafeEnchantment(enchant, level);
 
-                                        if (!originalItem.equals(item)) {
-                                            // AE lo aplicó. Sincronizamos 'meta' para capturar sus metadatos.
-                                            meta = item.getItemMeta();
-                                            appliedSuccessfully = true;
-
-                                        } else {
-                                            this.plugin.getLogger().warning("AE API failed to apply: " + enchantName);
-                                        }
-
-                                    } catch (Exception e) {
-                                        this.plugin.getLogger().warning("Error applying AdvancedEnchantment '" + enchantName + "': " + e.getMessage());
+                                        // Sincronizar 'meta' para reflejar los encantamientos aplicados
+                                        meta = item.getItemMeta();
+                                        appliedSuccessfully = true;
+                                    } else if (!this.plugin.isAdvancedEnchantmentsLoaded()) {
+                                        // Solo advertir si AE no estaba cargado y no se encontró el enchant de Bukkit
+                                        this.plugin.getLogger().warning("Invalid enchantment: " + enchantName + " (Bukkit enchant not found, AE not loaded)");
                                     }
-                                } else {
-                                    if (Enchantment.getByName(bukkitEnchantName) == null) {
-                                        this.plugin.getLogger().warning("Invalid custom enchantment: " + enchantName + " (AdvancedEnchantments not loaded)");
-                                    }
+                                    // Si AE estaba cargado pero falló (e.g., el enchant no existe en AE), ya se registró el error arriba.
+
+                                } catch (Exception e) {
+                                    this.plugin.getLogger().warning("Error applying vanilla enchantment via Bukkit: " + enchantName);
                                 }
                             }
                         }
                     }
 
-                    meta = item.getItemMeta(); // Sincronización final antes del manejo de lore/glow
+                    meta = item.getItemMeta();
 
                     // --- 2. LIMPIEZA AGRESIVA Y RECONSTRUCCIÓN DEL LORE ---
 

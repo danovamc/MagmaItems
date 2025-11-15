@@ -26,4 +26,5 @@ dev\lujanabril\magmaItems\Commands\ItemCommand.class
 dev\lujanabril\magmaItems\Managers\ConfirmationManager.class
 dev\lujanabril\magmaItems\Managers\ItemManager.class
 dev\lujanabril\magmaItems\Managers\CustomItemManager$CustomItemData.class
+dev\lujanabril\magmaItems\GUI\HistoryGUI$DeleteConfirmHolder.class
 dev\lujanabril\magmaItems\GUI\HistoryGUI$SortType.class

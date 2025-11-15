@@ -8,6 +8,10 @@ import dev.lujanabril.magmaItems.Managers.ItemManager;
 import dev.lujanabril.magmaItems.Managers.ItemStorageManager;
 import dev.lujanabril.magmaItems.Managers.ItemTrackingManager;
 import net.kyori.adventure.text.minimessage.MiniMessage;
+// --- IMPORTACIÓN NUEVA Y CORREGIDA ---
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+// --- FIN IMPORTACIÓN ---
 import org.bukkit.Bukkit;
 import org.bukkit.NamespacedKey;
 import org.bukkit.command.Command;
@@ -542,20 +546,29 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
 
     }
 
+    // --- MÉTODO CORREGIDO ---
     private String extractOriginalOwnerFromLore(ItemMeta meta) {
         if (meta != null && meta.hasLore()) {
             List<String> lore = meta.getLore();
             if (lore.size() >= 4) {
-                String loreLine = (String) lore.get(3);
+                String loreLine = (String) lore.get(3); // Esto es un String con códigos '§'
                 if (loreLine != null && !loreLine.isEmpty()) {
-                    String plainText = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(this.miniMessage.deserialize(loreLine));
+
+                    // 1. Convertir el String legacy (con '§') a un Componente Adventure
+                    net.kyori.adventure.text.Component component = LegacyComponentSerializer.legacySection().deserialize(loreLine);
+
+                    // 2. Serializar ese Componente a texto plano (sin formato)
+                    String plainText = PlainTextComponentSerializer.plainText().serialize(component);
+
+                    // 3. Limpiar el texto y devolverlo
                     return plainText.replaceAll("✎", "").trim();
                 }
             }
         }
-
         return "Desconocido";
     }
+    // --- FIN DE LA CORRECCIÓN ---
+
 
     private boolean hasUniqueId(ItemStack item) {
         if (item != null && item.hasItemMeta()) {

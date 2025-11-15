@@ -67,6 +67,9 @@ messages:
   totem-save: "<#FFD700><b>TOTEM</b> <dark_gray>➡</dark_gray> <green>¡El <gold>Tótem de Usos Múltiples</gold> te ha salvado! <gray>Usos restantes: <yellow>{uses}"
   totem-consumed: "<#FFD700><b>TOTEM</b> <dark_gray>➡</dark_gray> <red>El <gold>Tótem de Usos Múltiples</gold> se ha consumido por completo."
 
+Id-remover-whitelist:
+  - DanovaMC
+
 confirmation:
   title: "             ᴄᴏɴғɪʀᴍᴀʀ"
   confirm-text: "<!i><#33FF33><b>CONFIRMAR"
