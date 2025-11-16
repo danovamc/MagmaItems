@@ -1,6 +1,7 @@
 package dev.lujanabril.magmaItems.Managers;
 
 import dev.lujanabril.magmaItems.Main;
+import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -29,19 +30,36 @@ public class ItemTrackingManager {
     private final NamespacedKey magmaItemKey;
     private Map<String, String> itemTrackingCache = new HashMap();
 
+    private final File removalListFile;
+    private FileConfiguration removalListConfig;
+    private Set<String> idsToRemoveCache = new HashSet<>(); // Cache para la tarea
+
+    private final File physicalRemovalsLogFile; // Log para items físicos borrados
+    private FileConfiguration physicalRemovalsLogConfig;
+
+    private final MiniMessage miniMessage;
+
     public ItemTrackingManager(Main plugin) {
         this.plugin = plugin;
         this.magmaItemIdKey = new NamespacedKey(plugin, "magma_item_id");
         this.magmaItemKey = new NamespacedKey(plugin, "magma_item");
         this.trackingFile = new File(plugin.getDataFolder(), "item-tracking.yml");
+        this.miniMessage = plugin.getMiniMessage();
 
-        File logsFolder = new File(plugin.getDataFolder(), "logs"); // Crea la carpeta /logs/
+        File logsFolder = new File(plugin.getDataFolder(), "logs");
         if (!logsFolder.exists()) {
             logsFolder.mkdirs();
         }
         this.deletionLogFile = new File(logsFolder, "deletions_log.yml");
+
+        this.removalListFile = new File(logsFolder, "items_to_remove.yml");
+        this.physicalRemovalsLogFile = new File(logsFolder, "physical_removals.log");
+
         this.loadTracking();
         this.loadDeletionLog();
+
+        this.loadRemovalList();
+        this.loadPhysicalRemovalsLog();
     }
 
     public void loadTracking() {
@@ -59,6 +77,9 @@ public class ItemTrackingManager {
 
     public void reloadTracking() {
         this.loadTracking();
+        this.loadDeletionLog();
+        this.loadRemovalList();
+        this.loadPhysicalRemovalsLog();
     }
 
     public void loadDeletionLog() {
@@ -72,7 +93,6 @@ public class ItemTrackingManager {
         this.deletionLogConfig = YamlConfiguration.loadConfiguration(this.deletionLogFile);
     }
 
-    // Guarda el log de eliminaciones
     public void saveDeletionLog() {
         try {
             this.deletionLogConfig.save(this.deletionLogFile);
@@ -81,12 +101,137 @@ public class ItemTrackingManager {
         }
     }
 
+    public void loadRemovalList() {
+        if (!this.removalListFile.exists()) {
+            try {
+                this.removalListFile.createNewFile();
+                this.removalListConfig = YamlConfiguration.loadConfiguration(this.removalListFile);
+                this.removalListConfig.set("ids-to-remove", new ArrayList<String>());
+                this.removalListConfig.save(this.removalListFile);
+            } catch (IOException e) {
+                plugin.getLogger().log(Level.SEVERE, "No se pudo crear el archivo de lista de borrado", e);
+            }
+        }
+        this.removalListConfig = YamlConfiguration.loadConfiguration(this.removalListFile);
+        this.idsToRemoveCache = new HashSet<>(this.removalListConfig.getStringList("ids-to-remove"));
+        plugin.getLogger().info("Cargadas " + idsToRemoveCache.size() + " IDs en la lista de borrado físico.");
+    }
+
+    public void saveRemovalList() {
+        try {
+            this.removalListConfig.set("ids-to-remove", new ArrayList<>(this.idsToRemoveCache));
+            this.removalListConfig.save(this.removalListFile);
+        } catch (IOException e) {
+            plugin.getLogger().log(Level.SEVERE, "No se pudo guardar el archivo de lista de borrado", e);
+        }
+    }
+
+    public void addItemToRemovalList(String itemId) {
+        if (this.idsToRemoveCache.add(itemId)) {
+            saveRemovalList();
+            plugin.getLogger().info("ID: " + itemId + " añadida a la lista de borrado físico.");
+        }
+    }
+
+    public boolean removeItemFromRemovalList(String itemId) {
+        if (this.idsToRemoveCache.remove(itemId)) {
+            saveRemovalList();
+            plugin.getLogger().info("ID: " + itemId + " eliminada de la lista de borrado físico.");
+            return true;
+        }
+        return false;
+    }
+
+    public void loadPhysicalRemovalsLog() {
+        if (!this.physicalRemovalsLogFile.exists()) {
+            try {
+                this.physicalRemovalsLogFile.createNewFile();
+            } catch (IOException e) {
+                plugin.getLogger().log(Level.SEVERE, "No se pudo crear el log de borrados físicos", e);
+            }
+        }
+        this.physicalRemovalsLogConfig = YamlConfiguration.loadConfiguration(this.physicalRemovalsLogFile);
+    }
+
+    public void savePhysicalRemovalsLog() {
+        try {
+            this.physicalRemovalsLogConfig.save(this.physicalRemovalsLogFile);
+        } catch (IOException e) {
+            plugin.getLogger().log(Level.SEVERE, "No se pudo guardar el log de borrados físicos", e);
+        }
+    }
+
+    public void logPhysicalRemoval(Player player, String itemId, String itemName) {
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss");
+        String timestamp = sdf.format(new Date());
+        String logKey = "removals." + timestamp + "_" + player.getName() + "_" + itemId;
+
+        this.physicalRemovalsLogConfig.set(logKey + ".player-name", player.getName());
+        this.physicalRemovalsLogConfig.set(logKey + ".player-uuid", player.getUniqueId().toString());
+        this.physicalRemovalsLogConfig.set(logKey + ".item-id", itemId);
+        this.physicalRemovalsLogConfig.set(logKey + ".item-name", itemName);
+        this.physicalRemovalsLogConfig.set(logKey + ".removal-date", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()));
+
+        savePhysicalRemovalsLog();
+    }
+
+    public void checkAndRemoveBlacklistedItems() {
+        if (idsToRemoveCache.isEmpty()) {
+            return;
+        }
+
+        int itemsRemoved = 0;
+
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            ItemStack[] contents = player.getInventory().getContents();
+            boolean inventoryChanged = false;
+
+            for (int i = 0; i < contents.length; ++i) {
+                ItemStack item = contents[i];
+                if (item != null && !item.getType().isAir() && item.hasItemMeta()) {
+                    ItemMeta meta = item.getItemMeta();
+                    PersistentDataContainer container = meta.getPersistentDataContainer();
+
+                    if (container.has(this.magmaItemIdKey, PersistentDataType.STRING)) {
+                        String currentId = (String)container.get(this.magmaItemIdKey, PersistentDataType.STRING);
+
+                        if (this.idsToRemoveCache.contains(currentId)) {
+                            String itemName = meta.hasDisplayName() ? meta.getDisplayName().toString() : item.getType().toString();
+                            logPhysicalRemoval(player, currentId, itemName);
+
+                            contents[i] = null;
+                            inventoryChanged = true;
+                            itemsRemoved++;
+                        }
+                    }
+                }
+            }
+
+            if (inventoryChanged) {
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    player.getInventory().setContents(contents);
+                    player.updateInventory();
+
+                    // --- INICIO DE LA CORRECCIÓN ---
+                    // Se ha quitado 'plugin.getPrefix()' del mensaje
+                    player.sendMessage(this.miniMessage.deserialize("<red>Algunos items en tu inventario han sido eliminados por un administrador."));
+                    // --- FIN DE LA CORRECCIÓN ---
+                });
+            }
+        }
+
+        if (itemsRemoved > 0) {
+            plugin.getLogger().info("Tarea de borrado completada. Se eliminaron " + itemsRemoved + " items físicos.");
+        }
+    }
+
+
     public void logDeletion(Player remover, ItemInfo itemInfo) {
         if (itemInfo == null) return;
 
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss");
         String timestamp = sdf.format(new Date());
-        String logKey = timestamp + "_" + itemInfo.getItemId(); // Clave única para el log
+        String logKey = timestamp + "_" + itemInfo.getItemId();
 
         String path = "deletions." + logKey;
         this.deletionLogConfig.set(path + ".deleter-name", remover.getName());
@@ -229,6 +374,10 @@ public class ItemTrackingManager {
         return this.itemTrackingCache.containsKey(uniqueId);
     }
 
+    public boolean idIsBlacklisted(String uniqueId) {
+        return this.idsToRemoveCache.contains(uniqueId);
+    }
+
     public List<ItemInfo> getAllTrackedItems() {
         List<ItemInfo> result = new ArrayList();
 
@@ -272,9 +421,14 @@ public class ItemTrackingManager {
                     if (container.has(this.magmaItemIdKey, PersistentDataType.STRING)) {
                         String itemId = (String)container.get(this.magmaItemIdKey, PersistentDataType.STRING);
                         ++magmaIdItemsFound;
+
+                        if (this.idsToRemoveCache.contains(itemId)) {
+                            continue;
+                        }
+
                         this.updateItemMaterial(itemId, item.getType());
                         if (!this.idExists(itemId)) {
-                            String itemName = meta.hasDisplayName() ? meta.getDisplayName() : item.getType().toString();
+                            String itemName = meta.hasDisplayName() ? meta.getDisplayName().toString() : item.getType().toString();
                             String originalOwner = this.extractOriginalOwnerFromLore(meta);
                             this.registerItem(itemId, player.getUniqueId().toString(), player.getName(), itemName, originalOwner);
                             ++newItemsRegistered;
@@ -450,5 +604,9 @@ public class ItemTrackingManager {
         public void setItemMaterial(Material itemMaterial) {
             this.itemMaterial = itemMaterial;
         }
+    }
+
+    public Set<String> getIdsToRemoveCache() {
+        return this.idsToRemoveCache;
     }
 }

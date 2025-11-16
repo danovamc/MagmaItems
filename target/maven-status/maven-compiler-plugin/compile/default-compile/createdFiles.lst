@@ -16,6 +16,7 @@ dev\lujanabril\magmaItems\Managers\ItemStorageManager.class
 dev\lujanabril\magmaItems\Managers\ItemTrackingManager.class
 dev\lujanabril\magmaItems\DatabaseManager.class
 dev\lujanabril\magmaItems\Listeners\HistoryGUIListener.class
+dev\lujanabril\magmaItems\Managers\CustomItemManager$CustomDrop.class
 dev\lujanabril\magmaItems\Managers\BombManager$2.class
 dev\lujanabril\magmaItems\Managers\ItemManager$Action.class
 dev\lujanabril\magmaItems\Listeners\BombListener.class

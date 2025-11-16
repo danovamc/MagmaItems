@@ -8,10 +8,8 @@ import dev.lujanabril.magmaItems.Managers.ItemManager;
 import dev.lujanabril.magmaItems.Managers.ItemStorageManager;
 import dev.lujanabril.magmaItems.Managers.ItemTrackingManager;
 import net.kyori.adventure.text.minimessage.MiniMessage;
-// --- IMPORTACIÓN NUEVA Y CORREGIDA ---
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
-// --- FIN IMPORTACIÓN ---
 import org.bukkit.Bukkit;
 import org.bukkit.NamespacedKey;
 import org.bukkit.command.Command;
@@ -96,12 +94,30 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
                     return this.handleHistoryCommand(sender, args);
                 case "checkduplicates":
                     return this.handleCheckDuplicatesCommand(sender);
+                case "unblacklist":
+                    return this.handleUnblacklistCommand(sender, args);
                 default:
                     String usageMsg = this.parsePlaceholders(this.plugin.getConfig().getString("messages.usage", "<gray>Usage: /magmaitem [give|reload|applyid|storage|history|checkduplicates]"));
                     sender.sendMessage(this.miniMessage.deserialize(this.prefix + usageMsg));
                     return true;
             }
         }
+    }
+
+    private boolean handleUnblacklistCommand(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.sendMessage(this.miniMessage.deserialize(this.prefix + "<gray>Uso: /magmaitem unblacklist <ID>"));
+            return true;
+        }
+
+        String itemId = args[1];
+
+        if (this.itemTrackingManager.removeItemFromRemovalList(itemId)) {
+            sender.sendMessage(this.miniMessage.deserialize(this.prefix + "<green>ID <yellow>" + itemId + "<green> eliminada de la lista de borrado. Los items físicos ya no se eliminarán."));
+        } else {
+            sender.sendMessage(this.miniMessage.deserialize(this.prefix + "<red>Esa ID no se encontró en la lista de borrado."));
+        }
+        return true;
     }
 
     private boolean handleHistoryCommand(CommandSender sender, String[] args) {
@@ -136,6 +152,23 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
     }
 
     private boolean handleHistoryRemove(CommandSender sender, String[] args) {
+        // Check 1: Debe ser un jugador para abrir la GUI
+        if (!(sender instanceof Player)) {
+            String playerOnly = this.parsePlaceholders(this.plugin.getConfig().getString("messages.player-only", "<red>This command can only be used by players."));
+            sender.sendMessage(this.miniMessage.deserialize(this.prefix + playerOnly));
+            return true;
+        }
+        Player player = (Player) sender;
+
+        // Check 2: El jugador debe estar en la whitelist
+        List<String> whitelist = plugin.getConfig().getStringList("Id-remover-whitelist");
+        if (!whitelist.contains(player.getName())) {
+            String noPermMsg = this.parsePlaceholders(this.plugin.getConfig().getString("messages.no-permission", "<red>No tienes permiso para usar este comando."));
+            sender.sendMessage(this.miniMessage.deserialize(this.prefix + noPermMsg));
+            return true;
+        }
+
+        // Check 3: Uso correcto del comando
         if (args.length < 3) {
             String usage = this.parsePlaceholders(this.plugin.getConfig().getString("messages.history-remove-usage", "<gray>Usage: /magmaitem history remove <ID>"));
             sender.sendMessage(this.miniMessage.deserialize(this.prefix + usage));
@@ -144,18 +177,17 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
 
         String uniqueId = args[2];
 
-        if (!this.itemTrackingManager.idExists(uniqueId)) {
+        // Check 4: La ID debe existir
+        ItemTrackingManager.ItemInfo info = this.itemTrackingManager.getItemInfo(uniqueId);
+        if (info == null) {
             String notFound = this.parsePlaceholders(this.plugin.getConfig().getString("messages.history-id-not-found", "<red>Item tracking ID '<yellow>%id%<red>' not found."))
                     .replace("%id%", uniqueId);
             sender.sendMessage(this.miniMessage.deserialize(this.prefix + notFound));
             return true;
         }
 
-        this.itemTrackingManager.removeItemTracking(uniqueId);
-
-        String success = this.parsePlaceholders(this.plugin.getConfig().getString("messages.history-remove-success", "<green>Item tracking data for ID '<yellow>%id%<red>' successfully removed."))
-                .replace("%id%", uniqueId);
-        sender.sendMessage(this.miniMessage.deserialize(this.prefix + success));
+        // Acción: Abrir el menú de confirmación
+        this.historyGUI.openDeleteConfirmation(player, info);
         return true;
     }
 
@@ -317,7 +349,7 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
                     sender.sendMessage(this.miniMessage.deserialize(this.prefix + alreadyHasId));
                     return true;
                 } else {
-                    String itemName = heldItem.hasItemMeta() && heldItem.getItemMeta().hasDisplayName() ? heldItem.getItemMeta().getDisplayName() : heldItem.getType().toString();
+                    String itemName = heldItem.hasItemMeta() && heldItem.getItemMeta().hasDisplayName() ? heldItem.getItemMeta().getDisplayName().toString() : heldItem.getType().toString();
                     this.applyUniqueId(heldItem, player, itemName);
                     String idApplied = this.parsePlaceholders(this.plugin.getConfig().getString("messages.id-applied", "<green>Unique ID has been applied to the item in your hand."));
                     sender.sendMessage(this.miniMessage.deserialize(this.prefix + idApplied));
@@ -546,28 +578,21 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
 
     }
 
-    // --- MÉTODO CORREGIDO ---
     private String extractOriginalOwnerFromLore(ItemMeta meta) {
         if (meta != null && meta.hasLore()) {
             List<String> lore = meta.getLore();
             if (lore.size() >= 4) {
-                String loreLine = (String) lore.get(3); // Esto es un String con códigos '§'
+                String loreLine = (String) lore.get(3);
                 if (loreLine != null && !loreLine.isEmpty()) {
 
-                    // 1. Convertir el String legacy (con '§') a un Componente Adventure
                     net.kyori.adventure.text.Component component = LegacyComponentSerializer.legacySection().deserialize(loreLine);
-
-                    // 2. Serializar ese Componente a texto plano (sin formato)
                     String plainText = PlainTextComponentSerializer.plainText().serialize(component);
-
-                    // 3. Limpiar el texto y devolverlo
                     return plainText.replaceAll("✎", "").trim();
                 }
             }
         }
         return "Desconocido";
     }
-    // --- FIN DE LA CORRECCIÓN ---
 
 
     private boolean hasUniqueId(ItemStack item) {
@@ -580,6 +605,7 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
         }
     }
 
+    // --- MÉTODO CORREGIDO ---
     private String generateUniqueId() {
         StringBuilder idBuilder = new StringBuilder();
         String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -590,8 +616,15 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
         }
 
         String generatedId = idBuilder.toString();
-        return this.itemTrackingManager.idExists(generatedId) ? this.generateUniqueId() : generatedId;
+
+        // Comprobar si existe en el tracking O en la lista negra
+        if (this.itemTrackingManager.idExists(generatedId) || this.itemTrackingManager.idIsBlacklisted(generatedId)) {
+            return this.generateUniqueId(); // Si existe en cualquiera de las dos, generar uno nuevo
+        } else {
+            return generatedId; // Está libre
+        }
     }
+    // --- FIN CORRECCIÓN ---
 
     private ItemStack createItemWithPlayerPlaceholder(String itemId, Player player) {
         ItemStack itemBase = this.itemManager.createItem(itemId);
@@ -627,7 +660,7 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
             List<String> completions = new ArrayList();
 
             if (args.length == 1) {
-                completions.addAll(Arrays.asList("give", "reload", "applyid", "storage", "history", "checkduplicates"));
+                completions.addAll(Arrays.asList("give", "reload", "applyid", "storage", "history", "checkduplicates", "unblacklist"));
 
             } else if (args[0].equalsIgnoreCase("give")) {
                 if (args.length == 2) {
@@ -664,6 +697,10 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
                     completions.addAll(Arrays.asList("open", "remove"));
                 } else if (args.length == 3 && args[1].equalsIgnoreCase("remove")) {
                     completions.addAll(this.itemTrackingManager.getAllItemIds());
+                }
+            } else if (args[0].equalsIgnoreCase("unblacklist")) {
+                if (args.length == 2) {
+                    completions.addAll(this.itemTrackingManager.getIdsToRemoveCache());
                 }
             }
 

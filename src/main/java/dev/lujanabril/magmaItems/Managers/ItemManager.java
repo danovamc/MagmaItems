@@ -107,26 +107,17 @@ public class ItemManager {
                     Component parsedName = MiniMessage.miniMessage().deserialize(nameWithReset);
                     meta.displayName(parsedName);
 
-                    // --- 1. CAPTURAR EL LORE CUSTOM ORIGINAL PERO NO APLICARLO AÚN ---
                     List<Component> originalCustomLore = new ArrayList();
-                    // <<<< MODIFICACIÓN: LEER TOTEM-USES ANTES DE PROCESAR EL LORE >>>>
                     int totemUses = section.getInt("totem-uses", 0);
 
                     for(String line : section.getStringList("lore")) {
                         String lineWithReset = "<!italic>" + line;
 
-                        // <<<< NUEVO: REEMPLAZAR PLACEHOLDER SI ES UN TOTEM >>>>
                         if (totemUses > 0) {
                             lineWithReset = lineWithReset.replace("{uses}", String.valueOf(totemUses));
                         }
-                        // <<<< FIN NUEVO >>>>
-
                         originalCustomLore.add(MiniMessage.miniMessage().deserialize(lineWithReset));
                     }
-                    // <<<< FIN MODIFICACIÓN >>>>
-
-
-                    // *** SE ELIMINA el meta.lore(lore) INICIAL aquí ***
 
                     this.applyLeatherColor(meta, section, material, itemId);
                     this.applyArmorTrim(meta, section, material, itemId);
@@ -135,7 +126,6 @@ public class ItemManager {
                     meta.addItemFlags(ItemFlag.values());
                     item.setItemMeta(meta);
 
-                    // --- LÓGICA DE ATTRIBUTES ---
                     ConfigurationSection attributesSection = section.getConfigurationSection("attributes");
                     if (attributesSection != null) {
                         for(String attributeKey : attributesSection.getKeys(false)) {
@@ -163,13 +153,13 @@ public class ItemManager {
 
                     item.setItemMeta(meta);
 
-                    // --- INICIO: LÓGICA DE ENCHANTMENTS (VANILLA Y AE) ---
+                    // --- INICIO: LÓGICA DE ENCHANTMENTS (CORREGIDA) ---
                     for(String enchantStr : section.getStringList("enchants")) {
                         if (enchantStr.startsWith("*")) {
                             enchantStr = enchantStr.substring(1).trim();
                         }
 
-                        String[] parts = enchantStr.split(";");
+                        String[] parts = enchantStr.split(";", 2);
                         if (parts.length >= 1) {
                             String enchantName = parts[0].trim();
                             int level = 1;
@@ -178,71 +168,56 @@ public class ItemManager {
                                 level = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 1;
                             } catch (NumberFormatException ignored) {}
 
-                            boolean appliedSuccessfully = false;
+                            String bukkitEnchantName = enchantName.toUpperCase();
 
-                            // 1. INTENTAR PRIMERO CON ADVANCEDENCHANTMENTS (PARA CUSTOM Y VANILLA)
-                            if (this.plugin.isAdvancedEnchantmentsLoaded()) {
+                            Enchantment bukkitEnchant = Enchantment.getByName(bukkitEnchantName);
+
+                            if (bukkitEnchant != null) {
+                                // SÍ es VANILLA. Aplicar con Bukkit.
                                 try {
-                                    ItemStack originalItem = item.clone();
-
-                                    // Dejar que AE API maneje todo.
-                                    // El 'true' (hideFromLore) es correcto ya que tienes lore custom.
-                                    item = AEAPI.applyEnchant(enchantName, level, originalItem, true);
-
-                                    if (!originalItem.equals(item)) {
-                                        // AE lo aplicó (ya sea custom o vanilla).
-                                        meta = item.getItemMeta();
-                                        appliedSuccessfully = true;
-                                    }
-                                    // Si AE no lo aplicó (originalItem.equals(item)), 'appliedSuccessfully' sigue false
-                                    // y el bloque de fallback (Bukkit) se ejecutará.
-
+                                    item.addUnsafeEnchantment(bukkitEnchant, level);
+                                    meta = item.getItemMeta(); // Sincronizar meta
                                 } catch (Exception e) {
-                                    this.plugin.getLogger().warning("Error applying enchant via AdvancedEnchantment '" + enchantName + "': " + e.getMessage());
-                                    // Dejar appliedSuccessfully = false para que intente el fallback de Bukkit
+                                    this.plugin.getLogger().warning("Error applying VANILLA enchantment via Bukkit: " + enchantName + " - " + e.getMessage());
                                 }
-                            }
+                            } else {
+                                // NO es VANILLA. Debe ser un encantamiento CUSTOM (de AE).
 
-                            // 2. FALLBACK: INTENTAR CON BUKKIT (VANILLA)
-                            // Esto solo se ejecutará si AE no está cargado, o si AE falló en aplicar el enchant.
-                            if (!appliedSuccessfully) {
-                                try {
-                                    String bukkitEnchantName = enchantName.toUpperCase();
-                                    Enchantment enchant = Enchantment.getByName(bukkitEnchantName);
+                                if (this.plugin.isAdvancedEnchantmentsLoaded()) {
+                                    try {
+                                        ItemStack originalItem = item.clone();
 
-                                    if (enchant != null) {
-                                        // 🟢 CAMBIO CLAVE: Usar addUnsafeEnchantment para altos niveles
-                                        item.addUnsafeEnchantment(enchant, level);
+                                        // --- INICIO DE LA CORRECCIÓN ---
+                                        // Aplicar con la API de AE
+                                        item = AEAPI.applyEnchant(enchantName, level, originalItem, true); // true = ocultar del lore
 
-                                        // Sincronizar 'meta' para reflejar los encantamientos aplicados
+                                        // Asumir que tuvo éxito y sincronizar la meta.
+                                        // Si el encantamiento no existía, la API no hará nada y es inofensivo.
+                                        // Ya no necesitamos la comprobación 'if (originalItem.equals(item))'
                                         meta = item.getItemMeta();
-                                        appliedSuccessfully = true;
-                                    } else if (!this.plugin.isAdvancedEnchantmentsLoaded()) {
-                                        // Solo advertir si AE no estaba cargado y no se encontró el enchant de Bukkit
-                                        this.plugin.getLogger().warning("Invalid enchantment: " + enchantName + " (Bukkit enchant not found, AE not loaded)");
-                                    }
-                                    // Si AE estaba cargado pero falló (e.g., el enchant no existe en AE), ya se registró el error arriba.
+                                        // --- FIN DE LA CORRECCIÓN ---
 
-                                } catch (Exception e) {
-                                    this.plugin.getLogger().warning("Error applying vanilla enchantment via Bukkit: " + enchantName);
+                                    } catch (Exception e) {
+                                        // Error al llamar a la API
+                                        this.plugin.getLogger().warning("Error applying CUSTOM enchant via AE '" + enchantName + "': " + e.getMessage());
+                                    }
+                                } else {
+                                    // Es un encantamiento custom, pero AE no está cargado.
+                                    this.plugin.getLogger().warning("Invalid custom enchantment: " + enchantName + " (AdvancedEnchantments not loaded)");
                                 }
                             }
                         }
                     }
 
-                    meta = item.getItemMeta();
+                    meta = item.getItemMeta(); // Sincronización final
 
                     // --- 2. LIMPIEZA AGRESIVA Y RECONSTRUCCIÓN DEL LORE ---
 
-                    // 1. OBTENEMOS EL LORE RESIDUAL (Si hay, de atributos u otras cosas)
                     List<Component> residualLore = meta.hasLore() ? meta.lore() : new ArrayList<>();
+                    meta.setLore(new ArrayList<>());
+                    item.setItemMeta(meta);
+                    meta = item.getItemMeta();
 
-                    // 2. ELIMINAR CUALQUIER LORE (Reset Agresivo)
-                    meta.setLore(new ArrayList<>()); // Borrar todo el lore de la meta
-                    item.setItemMeta(meta); // Forzar la aplicación del meta sin lore
-                    meta = item.getItemMeta(); // Volver a sincronizar
-
-                    // 3. RE-LIMPIAR EL LORE DE AE (Seguridad)
                     if (this.plugin.isAdvancedEnchantmentsLoaded()) {
                         List<String> aeEnchants = section.getStringList("enchants").stream()
                                 .filter(e -> !e.startsWith("*"))
@@ -261,45 +236,31 @@ public class ItemManager {
                         }
                     }
 
-                    // 4. CONSTRUCCIÓN DEL LORE FINAL
                     List<Component> finalLore = meta.hasLore() ? meta.lore() : new ArrayList<>();
                     finalLore.addAll(originalCustomLore);
                     meta.lore(finalLore);
 
-                    // 🟢 LÓGICA DE GLOW (Brillo de ítem)
-                    // El glow ahora debería funcionar porque los encantamientos Vanilla se aplicaron con item.addUnsafeEnchantment()
                     boolean shouldGlow = section.getBoolean("glow", false);
                     if (shouldGlow) {
-                        // Si el ítem debe brillar y no tiene encantamientos APLICADOS (incluyendo los de AE)
                         if (meta.getEnchants().isEmpty()) {
                             meta.addEnchant(Enchantment.UNBREAKING, 1, true);
                         }
                     }
 
-                    // OCULTAR LORE NATIVO DE ENCHANTMENTS y otras flags
                     meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
 
-                    // PROPIEDADES FINALES Y PDC
                     boolean droppable = section.getBoolean("droppable", true);
                     boolean keepOnDeath = section.getBoolean("keep-on-death", false);
                     boolean interactable = section.getBoolean("interactable", true);
 
-                    // <<<< LECTURA DE CAMPOS TOTEM >>>>
-                    // int totemUses = section.getInt("totem-uses", 0); // Ya se leyó arriba
                     List<String> totemEffects = section.getStringList("totem-effects");
-                    // <<<< FIN LECTURA >>>>
 
-                    // APLICAR EL IDENTIFICADOR MAGMA_ITEM (PDC)
                     meta.getPersistentDataContainer().set(this.key, PersistentDataType.STRING, itemId);
 
-                    // <<<< NUEVO: APLICAR NBT DE USOS DE TOTEM SI ES NECESARIO >>>>
                     if (totemUses > 0) {
                         meta.getPersistentDataContainer().set(this.totemUsesKey, PersistentDataType.INTEGER, totemUses);
                     }
-                    // <<<< FIN NUEVO >>>>
 
-
-                    // ESTABLECER LA META UNA SOLA VEZ AL FINAL DE TODA LA LÓGICA
                     item.setItemMeta(meta);
 
                     // --- RESTO DEL CÓDIGO (ACTIONS) ---
@@ -326,7 +287,6 @@ public class ItemManager {
 
                     boolean requireConfirmation = section.getBoolean("requireConfirmation", false);
 
-                    // MODIFICAR CONSTRUCTOR DE ITEMDATA
                     this.itemDataCache.put(itemId, new ItemData(item, actions, shiftClickActions, requireConfirmation, droppable, keepOnDeath, interactable, totemUses, totemEffects));
                     ++loadedCount;
                 } catch (Exception e) {
@@ -489,30 +449,20 @@ public class ItemManager {
 
         ItemStack item = data.item.clone();
 
-        // <<<< BLOQUE MODIFICADO >>>>
-        // LÓGICA DE INICIALIZACIÓN AUTOMÁTICA DEL TOTEM
-        // Esto ahora solo aplica el NBT y reemplaza el placeholder {uses}
-        // Asume que el lore YA está en el ítem (desde data.item.clone())
         if (data.getInitialTotemUses() > 0) {
             ItemMeta meta = item.getItemMeta();
             if (meta != null) {
 
-                // 1. Aplicar NBT de usos
                 meta.getPersistentDataContainer().set(this.totemUsesKey, PersistentDataType.INTEGER, data.getInitialTotemUses());
 
-                // 2. Definir el placeholder a buscar
                 String usesPlaceholder = "{uses}";
 
-                // 3. Obtener el Lore actual como Componentes
                 List<Component> currentLoreComponents = meta.lore() != null ? meta.lore() : new ArrayList<>();
                 List<Component> finalLoreComponents = new ArrayList<>();
 
-                // 4. Iterar y reemplazar el placeholder
                 for (Component component : currentLoreComponents) {
-                    // Serializar a MiniMessage para encontrar el placeholder
                     String miniMessageLine = plugin.getMiniMessage().serialize(component);
 
-                    // Reemplazar el placeholder
                     if (miniMessageLine.contains(usesPlaceholder)) {
                         String updatedLine = miniMessageLine.replace(usesPlaceholder, String.valueOf(data.getInitialTotemUses()));
                         finalLoreComponents.add(plugin.getMiniMessage().deserialize(updatedLine));
@@ -521,13 +471,11 @@ public class ItemManager {
                     }
                 }
 
-                // 5. Guardar el lore como List<Component>
                 meta.lore(finalLoreComponents);
 
                 item.setItemMeta(meta);
             }
         }
-        // <<<< FIN BLOQUE MODIFICADO >>>>
 
         return item;
     }
@@ -593,7 +541,6 @@ public class ItemManager {
         return new ArrayList(this.itemDataCache.keySet());
     }
 
-    // Método para que el TotemListener obtenga los efectos
     public List<String> getTotemEffects(String itemId) {
         ItemData data = (ItemData)this.itemDataCache.get(itemId);
         return (data != null) ? data.getTotemEffects() : new ArrayList<>();

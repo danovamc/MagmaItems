@@ -31,15 +31,22 @@ public class BombManager {
     private Economy economy;
     private final Map<UUID, Long> playerCooldowns = new HashMap();
     private final DecimalFormat itemFormatter = new DecimalFormat("#,###");
-    private final int BLOCKS_PER_TICK;
+
     private final int EXPLOSION_DELAY_TICKS;
     private final Map<UUID, ExplosionData> activeExplosions = new ConcurrentHashMap();
+
+    private final ItemManager itemManager;
+    private final ItemStorageManager itemStorageManager;
 
     public BombManager(Main plugin, CustomItemManager customItemManager) {
         this.plugin = plugin;
         this.customItemManager = customItemManager;
-        this.BLOCKS_PER_TICK = plugin.getConfig().getInt("bomb.optimization.blocks-per-tick", 500);
+
+        this.itemManager = plugin.getItemManager();
+        this.itemStorageManager = plugin.getItemStorageManager();
+
         this.EXPLOSION_DELAY_TICKS = plugin.getConfig().getInt("bomb.optimization.delay-between-ticks", 1);
+
         this.setupEconomy();
     }
 
@@ -80,7 +87,6 @@ public class BombManager {
                         thrownItem.setVelocity(direction);
                         thrownItem.setPickupDelay(Integer.MAX_VALUE);
 
-                        // Remover solo de la mano que se usó
                         if (isMainHand) {
                             ItemStack mainHandItem = player.getInventory().getItemInMainHand();
                             if (mainHandItem.getAmount() > 1) {
@@ -184,9 +190,25 @@ public class BombManager {
             world.spawnParticle(Particle.FLASH, center, 1, (double)0.5F, (double)0.5F, (double)0.5F, (double)0.0F);
             world.spawnParticle(Particle.FLAME, center, 50, bombData.getRadius() / (double)2.0F, bombData.getRadius() / (double)2.0F, bombData.getRadius() / (double)2.0F, 0.1);
             List<Block> blocksToDestroy = this.getBlocksInShape(center, bombData.getRadius(), bombData.getShape());
+
             if (!blocksToDestroy.isEmpty()) {
+
+                int totalBlocks = blocksToDestroy.size();
+                int delayBetweenTicks = this.EXPLOSION_DELAY_TICKS;
+                int targetDurationTicks = plugin.getConfig().getInt("bomb.optimization.target-duration-ticks", 30);
+
+                int totalBatches = targetDurationTicks / delayBetweenTicks;
+                if (totalBatches <= 0) totalBatches = 1;
+
+                int blocksPerBatch = (int)Math.ceil((double)totalBlocks / totalBatches);
+                int maxBlocksPerBatch = plugin.getConfig().getInt("bomb.optimization.max-blocks-per-batch", 500);
+
+                int finalBlocksPerBatch = Math.min(blocksPerBatch, maxBlocksPerBatch);
+
                 UUID explosionId = UUID.randomUUID();
-                ExplosionData explosionData = new ExplosionData(blocksToDestroy, thrower, center);
+
+                ExplosionData explosionData = new ExplosionData(blocksToDestroy, thrower, center, finalBlocksPerBatch, bombData.getCustomDrops());
+
                 this.activeExplosions.put(explosionId, explosionData);
                 this.startOptimizedDestruction(explosionId);
             }
@@ -203,7 +225,8 @@ public class BombManager {
                     List<Block> currentBatch = new ArrayList();
                     int blocksProcessed = 0;
 
-                    while(blocksProcessed < BombManager.this.BLOCKS_PER_TICK && !data.remainingBlocks.isEmpty()) {
+                    while(blocksProcessed < data.blocksPerTick && !data.remainingBlocks.isEmpty()) {
+
                         Block block = (Block)data.remainingBlocks.remove(0);
                         if (BombManager.this.isWorldGuardEnabled() && !BombManager.this.canBreakBlock(block.getLocation(), data.player)) {
                             ++blocksProcessed;
@@ -232,20 +255,93 @@ public class BombManager {
         }).runTaskTimer(this.plugin, 0L, (long)this.EXPLOSION_DELAY_TICKS);
     }
 
+    // --- MÉTODO 'processBatch' MODIFICADO (Implementa la nueva lógica) ---
     private void processBatch(List<Block> blocks, ExplosionData data) {
         for(Block block : blocks) {
             Material material = block.getType();
-            data.itemsToSell.put(material, (Integer)data.itemsToSell.getOrDefault(material, 0) + 1);
+            boolean wasCustomDrop = false;
+
+            // 1. Comprobar si este material tiene un drop custom definido en la bomba
+            if (data.customDrops.containsKey(material)) {
+                try {
+                    CustomItemManager.CustomDrop dropInfo = data.customDrops.get(material);
+
+                    // --- CAMBIO DE LÓGICA ---
+                    // Añadir el item a la lista de recolección en lugar de dropearlo
+                    data.itemsToGive.put(dropInfo.getItemId(), data.itemsToGive.getOrDefault(dropInfo.getItemId(), 0) + dropInfo.getAmount());
+                    // --- FIN CAMBIO DE LÓGICA ---
+
+                    wasCustomDrop = true;
+
+                } catch (Exception e) {
+                    plugin.getLogger().warning("Error al procesar custom drop de bomba: " + e.getMessage());
+                }
+            }
+
+            // 2. Si NO fue un drop custom, venderlo a ShopGUI+
+            if (!wasCustomDrop) {
+                data.itemsToSell.put(material, (Integer)data.itemsToSell.getOrDefault(material, 0) + 1);
+            }
+
+            // 3. Romper el bloque
             block.setType(Material.AIR);
         }
-
     }
+    // --- FIN MÉTODO MODIFICADO ---
 
+    // --- MÉTODO 'finishExplosion' MODIFICADO (Implementa la nueva lógica) ---
     private void finishExplosion(ExplosionData data) {
+        // 1. Vender items (como antes)
         this.sellItemsToShop(data.player, data.itemsToSell);
+
+        // --- CÓDIGO NUEVO ---
+        // 2. Dar items custom (en el hilo principal)
+        if (!data.itemsToGive.isEmpty()) {
+            // Usamos el scheduler para correr esto en el hilo principal
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                giveCustomDropsToPlayer(data.player, data.itemsToGive, data.center); // Damos los items
+            });
+        }
+        // --- FIN CÓDIGO NUEVO ---
+
+        // 3. Efectos de explosión (como antes)
         data.center.getWorld().spawnParticle(Particle.EXPLOSION, data.center, 1, (double)0.0F, (double)0.0F, (double)0.0F, (double)0.0F);
         data.center.getWorld().playSound(data.center, Sound.ENTITY_GENERIC_EXPLODE, 1.5F, 0.8F);
     }
+
+    // --- MÉTODO NUEVO ---
+    /**
+     * Da los items custom recolectados al jugador.
+     * DEBE EJECUTARSE EN EL HILO PRINCIPAL (SYNC).
+     */
+    private void giveCustomDropsToPlayer(Player player, Map<String, Integer> itemsToGive, Location explosionCenter) {
+        if (!player.isOnline()) return; // No dar items si el jugador se desconectó
+
+        for (Map.Entry<String, Integer> entry : itemsToGive.entrySet()) {
+            String itemId = entry.getKey();
+            int amount = entry.getValue();
+
+            ItemStack item = this.itemStorageManager.getItem(itemId);
+            if (item == null) {
+                plugin.getLogger().warning("¡Fallo al dar custom drop! El item '" + itemId + "' no existe en /mi storage.");
+                continue;
+            }
+
+            item.setAmount(amount);
+
+            // Intentar añadir al inventario
+            HashMap<Integer, ItemStack> leftover = player.getInventory().addItem(item);
+
+            // Si el inventario está lleno, dropear lo que sobre
+            if (!leftover.isEmpty()) {
+                for (ItemStack leftoverItem : leftover.values()) {
+                    // Dropear en la ubicación de la explosión
+                    player.getWorld().dropItemNaturally(explosionCenter, leftoverItem);
+                }
+            }
+        }
+    }
+    // --- FIN MÉTODO NUEVO ---
 
     private List<Block> getBlocksInShape(Location center, double radius, String shape) {
         List<Block> blocks = new ArrayList();
@@ -366,17 +462,28 @@ public class BombManager {
         this.activeExplosions.clear();
     }
 
+    // --- CLASE INTERNA MODIFICADA ---
     private static class ExplosionData {
         final List<Block> remainingBlocks;
         final Map<Material, Integer> itemsToSell;
         final Player player;
         final Location center;
+        final int blocksPerTick;
+        final Map<Material, CustomItemManager.CustomDrop> customDrops;
 
-        ExplosionData(List<Block> blocks, Player player, Location center) {
+        // --- NUEVO CAMPO ---
+        // Mapa para recolectar items custom. Key = ItemID, Value = Cantidad
+        final Map<String, Integer> itemsToGive;
+
+        ExplosionData(List<Block> blocks, Player player, Location center, int blocksPerTick, Map<Material, CustomItemManager.CustomDrop> customDrops) {
             this.remainingBlocks = new ArrayList(blocks);
             this.itemsToSell = new HashMap();
             this.player = player;
             this.center = center;
+            this.blocksPerTick = blocksPerTick;
+            this.customDrops = customDrops;
+            this.itemsToGive = new HashMap<>(); // <-- INICIALIZAR EL NUEVO MAPA
         }
     }
+    // --- FIN CLASE INTERNA MODIFICADA ---
 }

@@ -4,6 +4,17 @@ bomb:
   allowed-worlds:
     - mina
     - minasvip
+  optimization:
+    # ¿Cuántos ticks queremos que dure la explosión VISUAL (rompiendo bloques)?
+    # 20 ticks = 1 segundo. 30 ticks = 1.5 segundos.
+    target-duration-ticks: 5
+
+    # ¿Cada cuántos ticks se ejecuta un "batch" de borrado? 1 = cada tick.
+    delay-between-ticks: 1
+
+    # Límite de seguridad: ¿Cuál es el MÁXIMO de bloques a romper en un solo tick?
+    # Esto evita que una bomba GIGANTE (ej. radio 50) intente romper 50,000 bloques en un tick.
+    max-blocks-per-batch: 750
 
 totem:
   allowed-worlds:
@@ -11,6 +22,7 @@ totem:
     - minapvp
     - potpvp
     - world
+
   sounds:
     use:
       name: "BLOCK_BEACON_POWER_SELECT"
@@ -20,10 +32,15 @@ totem:
       name: "ENTITY_ITEM_BREAK"
       volume: 1.0
       pitch: 0.8
+  particles:
+    type: "TOTEM_OF_UNDYING"
+    count: 50
+    offset: 0.5
+    speed: 0.1
 
 messages:
   no-permission: "<red>No tienes permiso para usar este comando."
-  usage: "<gray>Uso: /magmaitem [give|reload|applyid|storage|history|checkduplicates]"
+  usage: "<gray>Uso: /magmaitem [give|reload|applyid|storage|history|checkduplicates|unblacklist]"
   give-usage: "<gray>Uso: /magmaitem give <player> <item> [amount]"
   player-not-found: "<red>Jugador '%player%' no encontrado o está desconectado."
   item-not-found: "<red>El ítem '%item%' no existe."
@@ -64,8 +81,23 @@ messages:
   storage-list-empty: "<yellow> Actualmente no hay ítems almacenados."
   storage-list-content: "<green>Ítems Almacenados: <white>%items%"
 
-  totem-save: "<#FFD700><b>TOTEM</b> <dark_gray>➡</dark_gray> <green>¡El <gold>Tótem de Usos Múltiples</gold> te ha salvado! <gray>Usos restantes: <yellow>{uses}"
-  totem-consumed: "<#FFD700><b>TOTEM</b> <dark_gray>➡</dark_gray> <red>El <gold>Tótem de Usos Múltiples</gold> se ha consumido por completo."
+  totem-save: "<#FFD700><b>TOTEM</b> <dark_gray>➡</dark_gray> <#CDFFB8>¡El Tótem te ha salvado!</#CDFFB8> <white>Aún le restan <#FFE550>{uses}</#FFE550> usos.</white>"
+  totem-consumed: "<#FFD700><b>TOTEM</b> <dark_gray>➡</dark_gray> <#FF5050>El Tótem se ha roto!</#FF5050>"
+
+  # --- MENSAJES AÑADIDOS ---
+  cannot-drop: "<red><b>ERROR</b> <dark_gray>▸</dark_gray> <white>¡No puedes tirar este ítem!</white>"
+  cannot-interact: "<red><b>ERROR</b> <dark_gray>▸</dark_gray> <white>¡No puedes interactuar con este ítem!</white>"
+
+  history-usage: "<gray>Uso: /magmaitem history [open|remove <ID>]"
+  history-remove-usage: "<gray>Uso: /magmaitem history remove <ID>"
+  history-id-not-found: "<red>ID de seguimiento '<yellow>%id%<red>' no encontrada."
+  history-remove-success: "<green>Datos de seguimiento para la ID '<yellow>%id%<green>' eliminados exitosamente."
+
+  duplicate-check-running: "<yellow>Un chequeo de duplicados ya está en ejecución."
+  starting-duplicate-check: "<green>Iniciando chequeo de MagmaItems duplicados..."
+  duplicate-check-complete: "<green>Chequeo de duplicados completado. Revisa la consola."
+  duplicate-check-error: "<red>Ocurrió un error durante el chequeo de duplicados."
+
 
 Id-remover-whitelist:
   - DanovaMC
@@ -91,6 +123,33 @@ confirmation:
   confirm-material: "LIME_STAINED_GLASS_PANE"
   cancel-material: "RED_STAINED_GLASS_PANE"
 
-placeholders: []
-items: []
-custom-items: []
+delete-confirmation:
+  title: "      ᴇʟɪᴍɪɴᴀʀ ʀᴇɢɪsᴛʀᴏ"
+  confirm-text: "<!i><#33FF33><b>CONFIRMAR BORRADO"
+  confirm-lore:
+    - '<!i><dark_gray>Acción Irreversible'
+    - ''
+    - '<!i><red>⚠ ¡Esta acción es permanente!'
+    - '<!i><gray>El item no será eliminado, solo'
+    - '<!i><gray>su registro en el historial.'
+    - ''
+    - '<!i><yellow>▸ ¡Click para confirmar!'
+  cancel-text: "<!i><#FF1313><b>CANCELAR"
+  cancel-lore:
+    - '<!i><dark_gray>Acción Segura'
+    - ''
+    - '<!i><gray>Regresarás al historial de items.'
+    - ''
+    - '<!i><yellow>▸ ¡Click para cancelar!'
+  confirm-material: "LIME_STAINED_GLASS_PANE"
+  cancel-material: "RED_STAINED_GLASS_PANE"
+
+menu:
+  history-title: "Historial - [%page%/%total%]"
+  item-display-name: "&r&6%item_name%"
+  previous-page: "&r&fPágina &8▸ &cAnterior"
+  close: "&r&fMenú &8▸ §x§f§f§5§8§4§1Cerrar"
+  next-page: "&r&fPágina &8▸ &aSiguiente"
+  clear-search: "&r&fMenú &8▸ §x§7§6§c§e§f§fBuscar"
+  search: "&r&fMenú &8▸ §x§7§6§c§e§f§fBuscar"
+  sort-button-title: "&r§fMenú &8▸ §x§b§a§d§3§d§5Orden"

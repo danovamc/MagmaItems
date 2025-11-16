@@ -8,10 +8,7 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.inventory.ItemStack;
 
 import java.io.File;
-import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.logging.Level;
 
 public class CustomItemManager {
@@ -88,14 +85,36 @@ public class CustomItemManager {
                         int time = section.getInt("time", 20);
                         int cooldown = section.getInt("cooldown", 0);
                         double throwDistance = section.getDouble("throw-distance", 1.2);
+
+                        // --- CÓDIGO NUEVO ---
+                        // Cargar la lista de drops custom
+                        Map<Material, CustomDrop> customDrops = new HashMap<>();
+                        List<String> dropStrings = section.getStringList("custom-drops");
+                        for (String dropString : dropStrings) {
+                            try {
+                                String[] parts = dropString.split(":");
+                                if (parts.length == 3) {
+                                    Material mat = Material.valueOf(parts[0].toUpperCase());
+                                    String dropItemId = parts[1];
+                                    int amount = Integer.parseInt(parts[2]);
+                                    customDrops.put(mat, new CustomDrop(dropItemId, amount));
+                                }
+                            } catch (Exception e) {
+                                this.plugin.getLogger().warning("Error parseando custom-drop '" + dropString + "' para el item " + itemId);
+                            }
+                        }
+                        // --- FIN CÓDIGO NUEVO ---
+
                         ItemStack baseItem = this.itemManager.createItem(itemId);
                         if (baseItem == null) {
                             this.plugin.getLogger().warning("Failed to load custom item: " + itemId + " - Base item not found");
                             continue;
                         }
 
-                        this.customItemDataCache.put(itemId, new BombItemData(type, radius, shape, time, cooldown, throwDistance));
-                    } else {
+                        // --- Pasar el Map al constructor ---
+                        this.customItemDataCache.put(itemId, new BombItemData(type, radius, shape, time, cooldown, throwDistance, customDrops));
+
+                    } else { // Si es DRILL
                         int width = section.getInt("width", 3);
                         int height = section.getInt("height", 3);
                         int depth = section.getInt("depth", 1);
@@ -207,20 +226,40 @@ public class CustomItemManager {
         }
     }
 
+    // --- CLASE NUEVA ---
+    // Pequeña clase para guardar la info del drop custom
+    public static class CustomDrop {
+        private final String itemId;
+        private final int amount;
+
+        public CustomDrop(String itemId, int amount) {
+            this.itemId = itemId;
+            this.amount = amount;
+        }
+
+        public String getItemId() { return itemId; }
+        public int getAmount() { return amount; }
+    }
+    // --- FIN CLASE NUEVA ---
+
     public static class BombItemData extends CustomItemData {
         private final double radius;
         private final String shape;
         private final int time;
         private final int cooldown;
         private final double throwDistance;
+        // --- CAMPO NUEVO ---
+        private final Map<Material, CustomDrop> customDrops;
 
-        public BombItemData(String type, double radius, String shape, int time, int cooldown, double throwDistance) {
+        // --- CONSTRUCTOR MODIFICADO ---
+        public BombItemData(String type, double radius, String shape, int time, int cooldown, double throwDistance, Map<Material, CustomDrop> customDrops) {
             super(type, 0, 0, 0, false, 0, EnumSet.noneOf(Material.class));
             this.radius = radius;
             this.shape = shape;
             this.time = time;
             this.cooldown = cooldown;
             this.throwDistance = throwDistance;
+            this.customDrops = customDrops; // Seteamos el nuevo campo
         }
 
         public double getRadius() {
@@ -241,6 +280,11 @@ public class CustomItemManager {
 
         public double getThrowDistance() {
             return this.throwDistance;
+        }
+
+        // --- MÉTODO NUEVO ---
+        public Map<Material, CustomDrop> getCustomDrops() {
+            return this.customDrops;
         }
     }
 }

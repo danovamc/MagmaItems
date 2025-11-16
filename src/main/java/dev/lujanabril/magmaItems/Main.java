@@ -50,7 +50,10 @@ public class Main extends JavaPlugin {
         this.getCommand("magmaitems").setExecutor(this.itemCommand);
         this.getCommand("magmaitems").setTabCompleter(this.itemCommand);
 
-        this.startDuplicateCheckTask();
+        // --- TAREA MODIFICADA ---
+        // Ahora esta única tarea se encarga de ambas cosas cada 30 segundos
+        this.startCombinedCheckTask();
+        // --- FIN MODIFICACIÓN ---
     }
 
     private void loadPlaceholders() {
@@ -63,8 +66,11 @@ public class Main extends JavaPlugin {
         }
     }
 
-    private void startDuplicateCheckTask() {
-        Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> this.itemTrackingManager.checkAllMagmaItems(), 600L, 600L);
+    private void startCombinedCheckTask() {
+        Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
+            this.itemTrackingManager.checkAllMagmaItems();
+            this.itemTrackingManager.checkAndRemoveBlacklistedItems();
+        }, 600L, 600L);
     }
 
     public boolean isAdvancedEnchantmentsLoaded() {
@@ -73,17 +79,9 @@ public class Main extends JavaPlugin {
 
     public String renderMiniMessageToLegacy(String mmString) {
         if (mmString == null) return null;
-
-        // Paso 1: Sanitiza el input de MiniMessage, convirtiendo § a & para evitar el crash del parser.
         String sanitizedString = mmString.replace('§', '&');
-
-        // Paso 2: Deserializa el String (que ahora solo tiene tags MM y & codes) a un Component.
         net.kyori.adventure.text.Component component = this.miniMessage.deserialize(sanitizedString);
-
-        // Paso 3: Serializa el Component a formato Ampersand (&), y luego fuerza la conversión final a Section codes (§).
-        // Esto asegura que el cliente de Minecraft (que necesita §) lo lea correctamente.
         String legacyAmpersandString = LegacyComponentSerializer.legacyAmpersand().serialize(component);
-
         return legacyAmpersandString.replace('&', '§');
     }
 
@@ -135,6 +133,8 @@ public class Main extends JavaPlugin {
 
         if (this.itemTrackingManager != null) {
             this.itemTrackingManager.reloadTracking();
+            // --- AÑADIDO: Recargar las listas de borrado ---
+            this.itemTrackingManager.loadRemovalList();
         }
 
         if (this.itemStorageManager != null) {

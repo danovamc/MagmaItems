@@ -249,7 +249,10 @@ public class HistoryGUIListener implements Listener {
                     // 2. Eliminar el registro
                     trackingManager.removeItemTracking(info.getItemId());
 
-                    // 3. Notificar y refrescar
+                    // --- 3. AÑADIR A LA LISTA NEGRA (NUEVO) ---
+                    trackingManager.addItemToRemovalList(info.getItemId());
+
+                    // 4. Notificar y refrescar (esto ya lo tenías)
                     player.sendMessage(miniMessage.deserialize(prefix + "<green>Registro <yellow>" + info.getItemId() + "<green> eliminado exitosamente."));
                     player.playSound(Sound.sound(org.bukkit.Sound.ENTITY_PLAYER_LEVELUP.key(), Source.MASTER, 0.5F, 1.2F));
 
