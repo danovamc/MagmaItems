@@ -276,7 +276,7 @@ public class BombManager {
     }
 
     private void finishExplosion(ExplosionData data) {
-        this.sellManager.sellItemsToShop(data.player, data.itemsToSell);
+        this.sellManager.sellItemsToShop(data.player, data.itemsToSell, "messages.bomb-sale-chat", "messages.bomb-sale-title", "messages.bomb-sale-subtitle");
 
         if (!data.itemsToGive.isEmpty()) {
             Bukkit.getScheduler().runTask(plugin, () -> {

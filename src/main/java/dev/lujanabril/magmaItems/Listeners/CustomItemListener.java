@@ -182,7 +182,7 @@ public class CustomItemListener implements Listener {
                 if (data.blocksToBreak.isEmpty()) {
 
                     if (data.performAutosell && data.itemsToSell != null && !data.itemsToSell.isEmpty()) {
-                        CustomItemListener.this.sellManager.sellItemsToShop(data.player, data.itemsToSell);
+                        CustomItemListener.this.sellManager.sellItemsToShop(data.player, data.itemsToSell, "messages.drill-sale-chat", "messages.drill-sale-title", "messages.drill-sale-subtitle");
                     }
 
                     if (data.blocksBrokenSoFar > 0 && data.player.getGameMode() != GameMode.CREATIVE) {

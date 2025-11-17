@@ -74,6 +74,10 @@ messages:
   bomb-sale-subtitle: "§x§5§9§f§f§2§0+${money}"
   world-not-allowed: "§x§F§F§3§4§5§8§lDINAMITA §8➡ §f¡No puedes §cusar §fdinamitas aquí!"
 
+  drill-sale-chat: ""
+  drill-sale-title: ""
+  drill-sale-subtitle: "§x§5§9§f§f§2§0+${money}"
+
   already-has-id: "<red>Este ítem ya tiene una ID única."
   custom-id-exists: "<red>La ID '%id%' ya existe. Por favor, elige una diferente."
   no-item-in-hand: "<red>Debes sostener un ítem en tu mano principal."

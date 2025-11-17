@@ -46,8 +46,11 @@ public class SellManager {
      *
      * @param player      El jugador que vende.
      * @param itemsToSell El mapa de Materiales y cantidades a vender.
+     * @param chatMessageKey     La clave del config.yml para el mensaje de chat.
+     * @param titleMessageKey    La clave del config.yml para el mensaje de título.
+     * @param subtitleMessageKey La clave del config.yml para el mensaje de subtítulo.
      */
-    public void sellItemsToShop(Player player, Map<Material, Integer> itemsToSell) {
+    public void sellItemsToShop(Player player, Map<Material, Integer> itemsToSell, String chatMessageKey, String titleMessageKey, String subtitleMessageKey) {
         if (itemsToSell.isEmpty() || this.economy == null || !this.isShopGuiPlusEnabled()) {
             return;
         }
@@ -77,21 +80,46 @@ public class SellManager {
 
         // Enviar mensajes de venta si se vendió algo
         if (totalItemsSold > 0) {
-            // Reutilizamos los mensajes de la bomba, ya que son genéricos
-            String chatMessage = this.plugin.getConfig().getString("messages.bomb-sale-chat", "§a§l[BOMBA] §7Has vendido §e{items} §7items por §a${money}")
-                    .replace("{items}", this.itemFormatter.format(totalItemsSold))
-                    .replace("{money}", this.formatMoney(totalEarnings));
 
-            player.sendMessage(chatMessage);
+            // Lógica del Mensaje de Chat
+            String chatMessageFormat = this.plugin.getConfig().getString(chatMessageKey); // Obtiene el string, o null si no existe
+            if (chatMessageFormat != null && !chatMessageFormat.isEmpty()) {
+                String chatMessage = chatMessageFormat
+                        .replace("{items}", this.itemFormatter.format(totalItemsSold))
+                        .replace("{money}", this.formatMoney(totalEarnings));
+                player.sendMessage(chatMessage);
+            }
 
-            String titleMessage = this.plugin.getConfig().getString("messages.bomb-sale-title", "§a+${money}")
-                    .replace("{money}", this.formatMoney(totalEarnings));
+            // --- INICIO DE LA MODIFICACIÓN ---
 
-            String subtitleMessage = this.plugin.getConfig().getString("messages.bomb-sale-subtitle", "§7(§e{items} items§7)")
-                    .replace("{items}", String.valueOf(totalItemsSold)) // Subtítulo simple
-                    .replace("{money}", this.formatMoney(totalEarnings));
+            // Lógica del Título y Subtítulo
+            String titleMessageFormat = this.plugin.getConfig().getString(titleMessageKey);
+            String subtitleMessageFormat = this.plugin.getConfig().getString(subtitleMessageKey);
 
-            player.sendTitle(titleMessage, subtitleMessage, 10, 40, 10);
+            // Comprobar si *alguno* de los dos tiene texto.
+            boolean hasTitle = titleMessageFormat != null && !titleMessageFormat.isEmpty();
+            boolean hasSubtitle = subtitleMessageFormat != null && !subtitleMessageFormat.isEmpty();
+
+            if (hasTitle || hasSubtitle) { // <-- Lógica corregida
+
+                String titleMessage = ""; // Default a vacío
+                if (hasTitle) {
+                    titleMessage = titleMessageFormat
+                            .replace("{money}", this.formatMoney(totalEarnings));
+                }
+
+                String subtitleMessage = ""; // Default a vacío
+                if (hasSubtitle) {
+                    subtitleMessage = subtitleMessageFormat
+                            .replace("{items}", String.valueOf(totalItemsSold))
+                            .replace("{money}", this.formatMoney(totalEarnings));
+                }
+
+                player.sendTitle(titleMessage, subtitleMessage, 10, 40, 10);
+            }
+
+            // --- FIN DE LA MODIFICACIÓN ---
+
             player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
         }
     }
