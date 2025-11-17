@@ -24,36 +24,45 @@ public class Main extends JavaPlugin {
     private String prefix;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
 
+    private SellManager sellManager;
+
+    // --- CAMPOS NUEVOS (para guardar las instancias) ---
+    private BombManager bombManager;
+    private CustomItemListener customItemListener;
+    private ItemListener itemListener; // <-- También guardamos este por consistencia
+
     public void onEnable() {
         this.saveDefaultConfig();
         this.loadPlaceholders();
 
         this.prefix = this.getConfig().getString("prefix", "<gray>[<red>MagmaItems</red>] ");
 
+        // --- INICIALIZAR MANAGERS ---
         this.historyGUI = new HistoryGUI(this);
         this.itemManager = new ItemManager(this);
         this.customItemManager = new CustomItemManager(this, this.itemManager);
         this.itemStorageManager = new ItemStorageManager(this);
-
         this.itemTrackingManager = new ItemTrackingManager(this);
+        this.sellManager = new SellManager(this);
 
-        BombManager bombManager = new BombManager(this, this.customItemManager);
+        // --- CONSTRUCTORES MODIFICADOS (asignamos a los campos de la clase) ---
+        this.bombManager = new BombManager(this, this.customItemManager, this.sellManager);
+        this.itemListener = new ItemListener(this); // Asignamos
+        this.customItemListener = new CustomItemListener(this, this.customItemManager, this.sellManager); // Asignamos
 
-        this.getServer().getPluginManager().registerEvents(new BombListener(this.customItemManager, bombManager), this);
-        this.getServer().getPluginManager().registerEvents(new ItemListener(this), this);
-        this.getServer().getPluginManager().registerEvents(new CustomItemListener(this, this.customItemManager), this);
+        this.getServer().getPluginManager().registerEvents(new BombListener(this.customItemManager, this.bombManager), this);
+        this.getServer().getPluginManager().registerEvents(this.itemListener, this); // Usamos el campo
+        this.getServer().getPluginManager().registerEvents(this.customItemListener, this); // Usamos el campo
         this.getServer().getPluginManager().registerEvents(new ItemEventListener(this, this.itemManager), this);
         this.getServer().getPluginManager().registerEvents(new HistoryGUIListener(this, this.miniMessage, this.prefix), this);
         this.getServer().getPluginManager().registerEvents(new TotemListener(this), this);
+        // --- FIN MODIFICACIONES ---
 
         this.itemCommand = new ItemCommand(this);
         this.getCommand("magmaitems").setExecutor(this.itemCommand);
         this.getCommand("magmaitems").setTabCompleter(this.itemCommand);
 
-        // --- TAREA MODIFICADA ---
-        // Ahora esta única tarea se encarga de ambas cosas cada 30 segundos
         this.startCombinedCheckTask();
-        // --- FIN MODIFICACIÓN ---
     }
 
     private void loadPlaceholders() {
@@ -105,6 +114,10 @@ public class Main extends JavaPlugin {
         return this.itemTrackingManager;
     }
 
+    public SellManager getSellManager() {
+        return this.sellManager;
+    }
+
     public MiniMessage getMiniMessage() {
         return this.miniMessage;
     }
@@ -113,6 +126,8 @@ public class Main extends JavaPlugin {
         return this.prefix;
     }
 
+    // --- MÉTODO RELOADCONFIG MODIFICADO ---
+    @Override
     public void reloadConfig() {
         super.reloadConfig();
         this.loadPlaceholders();
@@ -131,9 +146,18 @@ public class Main extends JavaPlugin {
             this.customItemManager.reload();
         }
 
+        // --- LLAMADAS A LOS NUEVOS MÉTODOS RELOAD ---
+        if (this.bombManager != null) {
+            this.bombManager.reload();
+        }
+        if (this.customItemListener != null) {
+            this.customItemListener.reload();
+        }
+        // (ItemListener no parece tener config propia, así que no necesita reload)
+        // --- FIN ---
+
         if (this.itemTrackingManager != null) {
             this.itemTrackingManager.reloadTracking();
-            // --- AÑADIDO: Recargar las listas de borrado ---
             this.itemTrackingManager.loadRemovalList();
         }
 

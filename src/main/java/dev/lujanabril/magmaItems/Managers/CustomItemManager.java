@@ -86,7 +86,6 @@ public class CustomItemManager {
                         int cooldown = section.getInt("cooldown", 0);
                         double throwDistance = section.getDouble("throw-distance", 1.2);
 
-                        // --- CÓDIGO NUEVO ---
                         // Cargar la lista de drops custom
                         Map<Material, CustomDrop> customDrops = new HashMap<>();
                         List<String> dropStrings = section.getStringList("custom-drops");
@@ -103,7 +102,6 @@ public class CustomItemManager {
                                 this.plugin.getLogger().warning("Error parseando custom-drop '" + dropString + "' para el item " + itemId);
                             }
                         }
-                        // --- FIN CÓDIGO NUEVO ---
 
                         ItemStack baseItem = this.itemManager.createItem(itemId);
                         if (baseItem == null) {
@@ -111,7 +109,7 @@ public class CustomItemManager {
                             continue;
                         }
 
-                        // --- Pasar el Map al constructor ---
+                        // Pasar el Map al constructor
                         this.customItemDataCache.put(itemId, new BombItemData(type, radius, shape, time, cooldown, throwDistance, customDrops));
 
                     } else { // Si es DRILL
@@ -120,6 +118,10 @@ public class CustomItemManager {
                         int depth = section.getInt("depth", 1);
                         boolean maxDamage = section.getBoolean("maxDamage", true);
                         int damage = section.getInt("damage", 1);
+
+                        // LEER EL NUEVO FLAG
+                        boolean drillAutoSell = section.getBoolean("drill-autosell", false);
+
                         List<String> allowedMaterialNames = section.getStringList("allowedMaterials");
                         EnumSet<Material> allowedMats = EnumSet.noneOf(Material.class);
 
@@ -137,7 +139,8 @@ public class CustomItemManager {
                             continue;
                         }
 
-                        this.customItemDataCache.put(itemId, new CustomItemData(type, width, height, depth, maxDamage, damage, allowedMats));
+                        // PASAR EL FLAG AL CONSTRUCTOR
+                        this.customItemDataCache.put(itemId, new CustomItemData(type, width, height, depth, maxDamage, damage, allowedMats, drillAutoSell));
                     }
 
                     ++loadedCount;
@@ -178,6 +181,7 @@ public class CustomItemManager {
         this.loadCustomItems();
     }
 
+    // --- CLASE INTERNA MODIFICADA ---
     public static class CustomItemData {
         protected final String type;
         private final int width;
@@ -186,8 +190,10 @@ public class CustomItemManager {
         private final boolean maxDamage;
         private final int damage;
         private final EnumSet<Material> allowedMaterials;
+        private final boolean drillAutoSell; // <-- AÑADIDO
 
-        public CustomItemData(String type, int width, int height, int depth, boolean maxDamage, int damage, EnumSet<Material> allowedMaterials) {
+        // --- CONSTRUCTOR MODIFICADO ---
+        public CustomItemData(String type, int width, int height, int depth, boolean maxDamage, int damage, EnumSet<Material> allowedMaterials, boolean drillAutoSell) {
             this.type = type;
             this.width = width;
             this.height = height;
@@ -195,6 +201,7 @@ public class CustomItemManager {
             this.maxDamage = maxDamage;
             this.damage = damage;
             this.allowedMaterials = allowedMaterials;
+            this.drillAutoSell = drillAutoSell; // <-- AÑADIDO
         }
 
         public String getType() {
@@ -224,9 +231,13 @@ public class CustomItemManager {
         public EnumSet<Material> getAllowedMaterials() {
             return this.allowedMaterials;
         }
+
+        // --- GETTER AÑADIDO ---
+        public boolean isDrillAutoSell() {
+            return this.drillAutoSell;
+        }
     }
 
-    // --- CLASE NUEVA ---
     // Pequeña clase para guardar la info del drop custom
     public static class CustomDrop {
         private final String itemId;
@@ -240,7 +251,6 @@ public class CustomItemManager {
         public String getItemId() { return itemId; }
         public int getAmount() { return amount; }
     }
-    // --- FIN CLASE NUEVA ---
 
     public static class BombItemData extends CustomItemData {
         private final double radius;
@@ -248,18 +258,18 @@ public class CustomItemManager {
         private final int time;
         private final int cooldown;
         private final double throwDistance;
-        // --- CAMPO NUEVO ---
         private final Map<Material, CustomDrop> customDrops;
 
         // --- CONSTRUCTOR MODIFICADO ---
         public BombItemData(String type, double radius, String shape, int time, int cooldown, double throwDistance, Map<Material, CustomDrop> customDrops) {
-            super(type, 0, 0, 0, false, 0, EnumSet.noneOf(Material.class));
+            // --- PASAR 'false' PARA 'drillAutoSell' EN EL SUPER CONSTRUCTOR ---
+            super(type, 0, 0, 0, false, 0, EnumSet.noneOf(Material.class), false);
             this.radius = radius;
             this.shape = shape;
             this.time = time;
             this.cooldown = cooldown;
             this.throwDistance = throwDistance;
-            this.customDrops = customDrops; // Seteamos el nuevo campo
+            this.customDrops = customDrops;
         }
 
         public double getRadius() {
@@ -282,7 +292,6 @@ public class CustomItemManager {
             return this.throwDistance;
         }
 
-        // --- MÉTODO NUEVO ---
         public Map<Material, CustomDrop> getCustomDrops() {
             return this.customDrops;
         }

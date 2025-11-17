@@ -2,6 +2,7 @@ package dev.lujanabril.magmaItems.Listeners;
 
 import dev.lujanabril.magmaItems.Main;
 import dev.lujanabril.magmaItems.Managers.CustomItemManager;
+import dev.lujanabril.magmaItems.Managers.SellManager;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
@@ -17,44 +18,100 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.scheduler.BukkitRunnable;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class CustomItemListener implements Listener {
     private final Main plugin;
     private final CustomItemManager customItemManager;
+    private final SellManager sellManager;
+
     private final int MAX_BLOCKS_PER_OPERATION = 130;
-    private boolean isProcessingMultiBreak = false;
+
+    // --- CAMPOS MODIFICADOS (ya no son 'final') ---
+    private int drillBlocksPerBatch;
+    private int drillDelayBetweenTicks;
+    private List<String> autosellWorlds;
+
+    private final Set<UUID> drillingPlayers = new HashSet<>();
+    private final Map<UUID, DrillOperationData> activeDrillOperations = new ConcurrentHashMap<>();
+
     private final Random random = new Random();
 
-    public CustomItemListener(Main plugin, CustomItemManager customItemManager) {
+    public CustomItemListener(Main plugin, CustomItemManager customItemManager, SellManager sellManager) {
         this.plugin = plugin;
         this.customItemManager = customItemManager;
+        this.sellManager = sellManager;
+
+        // Se carga por primera vez aquí
+        this.drillBlocksPerBatch = plugin.getConfig().getInt("drill.optimization.blocks-per-batch", 40);
+        this.drillDelayBetweenTicks = plugin.getConfig().getInt("drill.optimization.delay-between-ticks", 1);
+        this.autosellWorlds = plugin.getConfig().getStringList("drill.optimization.autosell-worlds");
     }
+
+    // --- MÉTODO NUEVO ---
+    /**
+     * Recarga los valores de configuración de esta clase.
+     */
+    public void reload() {
+        this.drillBlocksPerBatch = plugin.getConfig().getInt("drill.optimization.blocks-per-batch", 40);
+        this.drillDelayBetweenTicks = plugin.getConfig().getInt("drill.optimization.delay-between-ticks", 1);
+        this.autosellWorlds = plugin.getConfig().getStringList("drill.optimization.autosell-worlds");
+    }
+    // --- FIN MÉTODO NUEVO ---
 
     @EventHandler(
             priority = EventPriority.NORMAL,
             ignoreCancelled = true
     )
     public void onBlockBreak(BlockBreakEvent event) {
-        if (!this.isProcessingMultiBreak) {
-            Player player = event.getPlayer();
-            ItemStack handItem = player.getInventory().getItemInMainHand();
-            if (handItem != null && handItem.getType() != Material.AIR) {
-                if (this.customItemManager.isCustomItem(handItem)) {
-                    CustomItemManager.CustomItemData itemData = this.customItemManager.getCustomItemData(handItem);
-                    if (itemData != null && itemData.getType().equalsIgnoreCase("DRILL")) {
-                        Block brokenBlock = event.getBlock();
-                        if (itemData.getAllowedMaterials().contains(brokenBlock.getType())) {
-                            BlockFace face = player.getFacing();
-                            List<Block> blocksToBreak = this.getBlocksToBreak(brokenBlock, face, itemData);
-                            if (blocksToBreak.size() > 130) {
-                                blocksToBreak = blocksToBreak.subList(0, 130);
-                            }
+        Player player = event.getPlayer();
+        UUID playerUuid = player.getUniqueId();
 
-                            this.processBlocksAsPlayer(player, handItem, blocksToBreak, itemData);
+        if (this.drillingPlayers.contains(playerUuid)) {
+            return;
+        }
+
+        if (this.activeDrillOperations.containsKey(playerUuid)) {
+            return;
+        }
+
+        ItemStack handItem = player.getInventory().getItemInMainHand();
+        if (handItem != null && handItem.getType() != Material.AIR) {
+            if (this.customItemManager.isCustomItem(handItem)) {
+                CustomItemManager.CustomItemData itemData = this.customItemManager.getCustomItemData(handItem);
+
+                if (itemData != null && itemData.getType().equalsIgnoreCase("DRILL")) {
+                    Block brokenBlock = event.getBlock();
+
+                    if (itemData.getAllowedMaterials().contains(brokenBlock.getType())) {
+                        BlockFace face = player.getFacing();
+                        List<Block> blocksToBreak = this.getBlocksToBreak(brokenBlock, face, itemData);
+
+                        if (blocksToBreak.size() > MAX_BLOCKS_PER_OPERATION) {
+                            blocksToBreak = blocksToBreak.subList(0, MAX_BLOCKS_PER_OPERATION);
+                        }
+
+                        if (!blocksToBreak.isEmpty()) {
+
+                            boolean itemCanAutosell = itemData.isDrillAutoSell();
+                            String currentWorld = player.getWorld().getName();
+
+                            boolean performAutosell = itemCanAutosell && (autosellWorlds.isEmpty() || autosellWorlds.contains(currentWorld));
+
+                            DrillOperationData data = new DrillOperationData(
+                                    player,
+                                    handItem,
+                                    itemData,
+                                    new LinkedList<>(blocksToBreak),
+                                    this.drillBlocksPerBatch,
+                                    performAutosell
+                            );
+
+                            this.activeDrillOperations.put(playerUuid, data);
+                            this.startDrillOperation(data);
                         }
                     }
                 }
@@ -62,48 +119,114 @@ public class CustomItemListener implements Listener {
         }
     }
 
-    private void processBlocksAsPlayer(Player player, ItemStack handItem, List<Block> blocksToBreak, CustomItemManager.CustomItemData itemData) {
-        List<Block> validBlocks = new ArrayList();
 
-        for(Block block : blocksToBreak) {
-            if (block.getChunk().isLoaded() && itemData.getAllowedMaterials().contains(block.getType())) {
-                validBlocks.add(block);
-            }
-        }
+    /**
+     * Inicia la tarea BukkitRunnable que procesará la rotura de bloques en lotes.
+     */
+    private void startDrillOperation(DrillOperationData data) {
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!data.player.isOnline()) {
+                    activeDrillOperations.remove(data.player.getUniqueId());
+                    this.cancel();
+                    return;
+                }
 
-        if (!validBlocks.isEmpty()) {
-            int blocksProcessed = 0;
+                drillingPlayers.add(data.player.getUniqueId());
 
-            try {
-                this.isProcessingMultiBreak = true;
+                int blocksProcessedThisBatch = 0;
+                List<Block> validBlocksInBatch = new ArrayList<>();
 
-                for(Block block : validBlocks) {
-                    BlockBreakEvent breakEvent = new BlockBreakEvent(block, player);
-                    Bukkit.getPluginManager().callEvent(breakEvent);
-                    if (!breakEvent.isCancelled()) {
-                        if (player.getGameMode() != GameMode.CREATIVE) {
-                            block.breakNaturally(handItem);
-                            ++blocksProcessed;
-                        } else {
-                            block.setType(Material.AIR);
-                        }
+                for (int i = 0; i < data.blocksPerBatch && !data.blocksToBreak.isEmpty(); i++) {
+                    Block block = data.blocksToBreak.poll();
+
+                    if (block.getChunk().isLoaded() && data.itemData.getAllowedMaterials().contains(block.getType())) {
+                        validBlocksInBatch.add(block);
                     }
                 }
-            } finally {
-                this.isProcessingMultiBreak = false;
-            }
 
-            if (blocksProcessed > 0 && player.getGameMode() != GameMode.CREATIVE) {
-                int damageToApply;
-                if (itemData.isMaxDamage()) {
-                    damageToApply = itemData.getDamage();
+                if (!validBlocksInBatch.isEmpty()) {
+                    try {
+                        for (Block block : validBlocksInBatch) {
+                            BlockBreakEvent breakEvent = new BlockBreakEvent(block, data.player);
+                            Bukkit.getPluginManager().callEvent(breakEvent);
+
+                            if (!breakEvent.isCancelled()) {
+                                if (data.player.getGameMode() != GameMode.CREATIVE) {
+
+                                    if (data.performAutosell) {
+                                        data.itemsToSell.put(block.getType(), data.itemsToSell.getOrDefault(block.getType(), 0) + 1);
+                                        block.setType(Material.AIR);
+                                    } else {
+                                        block.breakNaturally(data.drillItem);
+                                    }
+                                    blocksProcessedThisBatch++;
+
+                                } else {
+                                    block.setType(Material.AIR);
+                                }
+                            }
+                        }
+                    } finally {
+                        drillingPlayers.remove(data.player.getUniqueId());
+                    }
                 } else {
-                    damageToApply = 1;
+                    drillingPlayers.remove(data.player.getUniqueId());
                 }
 
-                this.damageItem(player, handItem, damageToApply);
-            }
+                if (data.player.getGameMode() != GameMode.CREATIVE) {
+                    data.blocksBrokenSoFar += blocksProcessedThisBatch;
+                }
 
+                if (data.blocksToBreak.isEmpty()) {
+
+                    if (data.performAutosell && data.itemsToSell != null && !data.itemsToSell.isEmpty()) {
+                        CustomItemListener.this.sellManager.sellItemsToShop(data.player, data.itemsToSell);
+                    }
+
+                    if (data.blocksBrokenSoFar > 0 && data.player.getGameMode() != GameMode.CREATIVE) {
+                        int totalDamage = data.itemData.isMaxDamage() ?
+                                data.itemData.getDamage() :
+                                data.blocksBrokenSoFar;
+
+                        damageItem(data.player, data.drillItem, totalDamage);
+                    }
+
+                    activeDrillOperations.remove(data.player.getUniqueId());
+                    this.cancel();
+                }
+            }
+        }.runTaskTimer(plugin, 0L, this.drillDelayBetweenTicks); // Usa el campo de la clase
+    }
+
+
+    /**
+     * Clase interna para guardar los datos de una operación de taladro.
+     */
+    private static class DrillOperationData {
+        final Player player;
+        final ItemStack drillItem;
+        final CustomItemManager.CustomItemData itemData;
+        final Queue<Block> blocksToBreak;
+        final int blocksPerBatch;
+        int blocksBrokenSoFar;
+
+        final boolean itemCanAutosell;
+        final boolean performAutosell;
+        final Map<Material, Integer> itemsToSell;
+
+        DrillOperationData(Player player, ItemStack drillItem, CustomItemManager.CustomItemData itemData, Queue<Block> blocksToBreak, int blocksPerBatch, boolean performAutosell) {
+            this.player = player;
+            this.drillItem = drillItem;
+            this.itemData = itemData;
+            this.blocksToBreak = blocksToBreak;
+            this.blocksPerBatch = blocksPerBatch;
+            this.blocksBrokenSoFar = 0;
+
+            this.itemCanAutosell = itemData.isDrillAutoSell();
+            this.performAutosell = performAutosell;
+            this.itemsToSell = this.performAutosell ? new HashMap<>() : null;
         }
     }
 
@@ -173,7 +296,16 @@ public class CustomItemListener implements Listener {
                         int currentDamage = damageable.getDamage();
                         int newDamage = currentDamage + damage;
                         if (newDamage >= item.getType().getMaxDurability()) {
-                            player.getInventory().setItemInMainHand((ItemStack)null);
+
+                            // Lógica más segura:
+                            if (player.getInventory().getItemInMainHand().equals(item)) {
+                                player.getInventory().setItemInMainHand(null);
+                            } else if (player.getInventory().getItemInOffHand().equals(item)) {
+                                player.getInventory().setItemInOffHand(null);
+                            } else {
+                                player.getInventory().removeItem(item);
+                            }
+
                             player.playSound(player.getLocation(), Sound.ENTITY_ITEM_BREAK, 1.0F, 1.0F);
                         } else {
                             damageable.setDamage(newDamage);

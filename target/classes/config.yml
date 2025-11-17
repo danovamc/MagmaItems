@@ -4,6 +4,7 @@ bomb:
   allowed-worlds:
     - mina
     - minasvip
+    - minapvp
   optimization:
     # ¿Cuántos ticks queremos que dure la explosión VISUAL (rompiendo bloques)?
     # 20 ticks = 1 segundo. 30 ticks = 1.5 segundos.
@@ -15,6 +16,21 @@ bomb:
     # Límite de seguridad: ¿Cuál es el MÁXIMO de bloques a romper en un solo tick?
     # Esto evita que una bomba GIGANTE (ej. radio 50) intente romper 50,000 bloques en un tick.
     max-blocks-per-batch: 750
+
+drill:
+  optimization:
+    # ¿Cuántos bloques del pico rompemos por "lote" (batch)?
+    # Un valor bajo (10-20) es más seguro para el lag.
+    blocks-per-batch: 50
+    # ¿Cada cuántos ticks rompemos un lote?
+    # 1 = cada tick (más rápido visualmente, un poco más de carga)
+    # 2 = cada 2 ticks (más lento, carga más repartida)
+    delay-between-ticks: 1
+    autosell-worlds:
+      - mina
+      - minapvp
+      - minasvip
+
 
 totem:
   allowed-worlds:
@@ -53,7 +69,7 @@ messages:
   player-offline: "<red>El jugador no está en línea/conectado."
 
   bomb-cooldown: "§x§F§F§3§4§5§8§lDINAMITA §8➡ §f¡Debes esperar §e{time} §fantes de usar otra dinamita!"
-  bomb-sale-chat: "§x§F§F§3§4§5§8§lDINAMITA §8➡ §f¡Has vendido §e{items} §fitems por §x§5§9§f§f§2§0${money}§f!"
+  bomb-sale-chat: "§x§F§F§3§4§5§8§lAUTOSELL §8➡ §f¡Has vendido §e{items} §fitems por §x§5§9§f§f§2§0${money}§f!"
   bomb-sale-title: ""
   bomb-sale-subtitle: "§x§5§9§f§f§2§0+${money}"
   world-not-allowed: "§x§F§F§3§4§5§8§lDINAMITA §8➡ §f¡No puedes §cusar §fdinamitas aquí!"
@@ -84,7 +100,6 @@ messages:
   totem-save: "<#FFD700><b>TOTEM</b> <dark_gray>➡</dark_gray> <#CDFFB8>¡El Tótem te ha salvado!</#CDFFB8> <white>Aún le restan <#FFE550>{uses}</#FFE550> usos.</white>"
   totem-consumed: "<#FFD700><b>TOTEM</b> <dark_gray>➡</dark_gray> <#FF5050>El Tótem se ha roto!</#FF5050>"
 
-  # --- MENSAJES AÑADIDOS ---
   cannot-drop: "<red><b>ERROR</b> <dark_gray>▸</dark_gray> <white>¡No puedes tirar este ítem!</white>"
   cannot-interact: "<red><b>ERROR</b> <dark_gray>▸</dark_gray> <white>¡No puedes interactuar con este ítem!</white>"
 

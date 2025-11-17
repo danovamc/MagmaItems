@@ -7,8 +7,10 @@ dev\lujanabril\magmaItems\Managers\BombManager$ExplosionData.class
 dev\lujanabril\magmaItems\Main.class
 dev\lujanabril\magmaItems\Managers\ConfirmationManager$ConfirmationData.class
 dev\lujanabril\magmaItems\Managers\CustomItemManager$BombItemData.class
+dev\lujanabril\magmaItems\Managers\SellManager.class
 dev\lujanabril\magmaItems\Listeners\ItemEventListener.class
 dev\lujanabril\magmaItems\Listeners\SearchChatListener.class
+dev\lujanabril\magmaItems\Listeners\CustomItemListener$DrillOperationData.class
 dev\lujanabril\magmaItems\GUI\HistoryGUI.class
 dev\lujanabril\magmaItems\Listeners\CustomItemListener.class
 dev\lujanabril\magmaItems\Managers\BombManager.class
@@ -29,3 +31,4 @@ dev\lujanabril\magmaItems\Managers\ItemManager.class
 dev\lujanabril\magmaItems\Managers\CustomItemManager$CustomItemData.class
 dev\lujanabril\magmaItems\GUI\HistoryGUI$DeleteConfirmHolder.class
 dev\lujanabril\magmaItems\GUI\HistoryGUI$SortType.class
+dev\lujanabril\magmaItems\Listeners\CustomItemListener$1.class
