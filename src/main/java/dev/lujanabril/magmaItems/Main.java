@@ -26,11 +26,11 @@ public class Main extends JavaPlugin {
 
     private SellManager sellManager;
 
-    // --- CAMPOS NUEVOS (para guardar las instancias) ---
     private BombManager bombManager;
     private CustomItemListener customItemListener;
-    private ItemListener itemListener; // <-- También guardamos este por consistencia
+    private ItemListener itemListener;
 
+    @Override
     public void onEnable() {
         this.saveDefaultConfig();
         this.loadPlaceholders();
@@ -45,24 +45,37 @@ public class Main extends JavaPlugin {
         this.itemTrackingManager = new ItemTrackingManager(this);
         this.sellManager = new SellManager(this);
 
-        // --- CONSTRUCTORES MODIFICADOS (asignamos a los campos de la clase) ---
         this.bombManager = new BombManager(this, this.customItemManager, this.sellManager);
-        this.itemListener = new ItemListener(this); // Asignamos
-        this.customItemListener = new CustomItemListener(this, this.customItemManager, this.sellManager); // Asignamos
+        this.itemListener = new ItemListener(this);
+        this.customItemListener = new CustomItemListener(this, this.customItemManager, this.sellManager);
 
         this.getServer().getPluginManager().registerEvents(new BombListener(this.customItemManager, this.bombManager), this);
-        this.getServer().getPluginManager().registerEvents(this.itemListener, this); // Usamos el campo
-        this.getServer().getPluginManager().registerEvents(this.customItemListener, this); // Usamos el campo
+        this.getServer().getPluginManager().registerEvents(this.itemListener, this);
+        this.getServer().getPluginManager().registerEvents(this.customItemListener, this);
         this.getServer().getPluginManager().registerEvents(new ItemEventListener(this, this.itemManager), this);
         this.getServer().getPluginManager().registerEvents(new HistoryGUIListener(this, this.miniMessage, this.prefix), this);
         this.getServer().getPluginManager().registerEvents(new TotemListener(this), this);
-        // --- FIN MODIFICACIONES ---
 
         this.itemCommand = new ItemCommand(this);
         this.getCommand("magmaitems").setExecutor(this.itemCommand);
         this.getCommand("magmaitems").setTabCompleter(this.itemCommand);
 
+        // Tarea asíncrona para chequeos pesados (duplicados, etc.)
         this.startCombinedCheckTask();
+
+        // --- TAREA NUEVA ---
+        // Tarea síncrona para actualizar la ubicación de los items
+        this.startItemLocationUpdateTask();
+    }
+
+    // --- MÉTODO NUEVO AÑADIDO ---
+    @Override
+    public void onDisable() {
+        if (itemTrackingManager != null) {
+            getLogger().info("Guardando datos de seguimiento de MagmaItems...");
+            itemTrackingManager.saveTracking(); // Guardar todos los datos de ubicación al apagar
+            getLogger().info("¡Datos de seguimiento guardados!");
+        }
     }
 
     private void loadPlaceholders() {
@@ -79,7 +92,18 @@ public class Main extends JavaPlugin {
         Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
             this.itemTrackingManager.checkAllMagmaItems();
             this.itemTrackingManager.checkAndRemoveBlacklistedItems();
-        }, 600L, 600L);
+        }, 600L, 600L); // Se ejecuta cada 30 segundos
+    }
+
+    // --- MÉTODO NUEVO AÑADIDO ---
+    private void startItemLocationUpdateTask() {
+        // Se ejecuta 10 segundos después de iniciar el server, y luego cada 5 segundos.
+        // Es SÍNCRONO (runTaskTimer) para poder acceder a player.getLocation() de forma segura.
+        Bukkit.getScheduler().runTaskTimer(this, () -> {
+            if (this.itemTrackingManager != null) {
+                this.itemTrackingManager.updateAllItemLocations();
+            }
+        }, 200L, 100L); // 100 Ticks = 5 Segundos
     }
 
     public boolean isAdvancedEnchantmentsLoaded() {
@@ -126,7 +150,6 @@ public class Main extends JavaPlugin {
         return this.prefix;
     }
 
-    // --- MÉTODO RELOADCONFIG MODIFICADO ---
     @Override
     public void reloadConfig() {
         super.reloadConfig();
@@ -146,15 +169,12 @@ public class Main extends JavaPlugin {
             this.customItemManager.reload();
         }
 
-        // --- LLAMADAS A LOS NUEVOS MÉTODOS RELOAD ---
         if (this.bombManager != null) {
             this.bombManager.reload();
         }
         if (this.customItemListener != null) {
             this.customItemListener.reload();
         }
-        // (ItemListener no parece tener config propia, así que no necesita reload)
-        // --- FIN ---
 
         if (this.itemTrackingManager != null) {
             this.itemTrackingManager.reloadTracking();

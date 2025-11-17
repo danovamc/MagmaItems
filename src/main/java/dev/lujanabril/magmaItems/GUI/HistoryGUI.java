@@ -1,6 +1,7 @@
 package dev.lujanabril.magmaItems.GUI;
 
 // --- Importaciones Requeridas ---
+import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
@@ -8,7 +9,7 @@ import org.bukkit.event.inventory.InventoryType;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
-import net.kyori.adventure.text.format.TextDecoration; // <-- ¡¡IMPORTACIÓN CLAVE PARA LA ITÁLICA!!
+import net.kyori.adventure.text.format.TextDecoration;
 // --- Fin Importaciones ---
 
 import dev.lujanabril.magmaItems.Main;
@@ -25,8 +26,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.*;
 import org.bukkit.inventory.meta.ItemMeta;
 
-import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -39,14 +40,14 @@ public class HistoryGUI {
     private final Set<UUID> playersInSearchMode = new HashSet();
     private final Map<UUID, SortType> playerSortTypes = new HashMap();
     private final Map<UUID, ItemTrackingManager.ItemInfo> itemPendingDeletion = new HashMap();
-
     private final Map<UUID, List<ItemTrackingManager.ItemInfo>> itemsPendingBulkDeletion = new HashMap<>();
-    public Map<UUID, List<ItemTrackingManager.ItemInfo>> getItemsPendingBulkDeletion() { return this.itemsPendingBulkDeletion; }
 
     private final Set<UUID> isSwitchingMenu = new HashSet<>();
     private final Map<UUID, String> playerLastSearch = new HashMap<>();
 
     private final MiniMessage miniMessage;
+
+    private final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
     public HistoryGUI(Main plugin) {
         this.plugin = plugin;
@@ -63,6 +64,10 @@ public class HistoryGUI {
 
     public Map<UUID, ItemTrackingManager.ItemInfo> getItemPendingDeletion() {
         return this.itemPendingDeletion;
+    }
+
+    public Map<UUID, List<ItemTrackingManager.ItemInfo>> getItemsPendingBulkDeletion() {
+        return this.itemsPendingBulkDeletion;
     }
 
     public SortType getCurrentSortType(UUID playerId) {
@@ -103,101 +108,39 @@ public class HistoryGUI {
         }
 
         SortType sortType = this.getCurrentSortType(player.getUniqueId());
-        this.sortItems(items, sortType);
+        this.sortItems(items, sortType, player);
         return items;
     }
 
-    private void sortItems(List<ItemTrackingManager.ItemInfo> items, SortType sortType) {
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-        switch (sortType.ordinal()) {
-            case 0 -> items.sort((a, b) -> {
-                try {
-                    Date dateA = sdf.parse(a.getCreationTime());
-                    Date dateB = sdf.parse(b.getCreationTime());
-                    return dateB.compareTo(dateA);
-                } catch (ParseException var8) {
-                    try {
-                        sdf.parse(a.getCreationTime());
-                        return -1;
-                    } catch (ParseException var7) {
-                        try {
-                            sdf.parse(b.getCreationTime());
-                            return 1;
-                        } catch (ParseException var6) {
-                            return b.getCreationTime().compareTo(a.getCreationTime());
-                        }
-                    }
-                }
-            });
-            case 1 -> items.sort((a, b) -> {
-                try {
-                    Date dateA = sdf.parse(a.getCreationTime());
-                    Date dateB = sdf.parse(b.getCreationTime());
-                    return dateA.compareTo(dateB);
-                } catch (ParseException var8) {
-                    try {
-                        sdf.parse(a.getCreationTime());
-                        return -1;
-                    } catch (ParseException var7) {
-                        try {
-                            sdf.parse(b.getCreationTime());
-                            return 1;
-                        } catch (ParseException var6) {
-                            return a.getCreationTime().compareTo(b.getCreationTime());
-                        }
-                    }
-                }
-            });
-            case 2 -> items.sort((a, b) -> {
-                try {
-                    String lastUpdateA = a.getLastUpdateTime() != null ? a.getLastUpdateTime() : a.getCreationTime();
-                    String lastUpdateB = b.getLastUpdateTime() != null ? b.getLastUpdateTime() : b.getCreationTime();
-                    Date dateA = sdf.parse(lastUpdateA);
-                    Date dateB = sdf.parse(lastUpdateB);
-                    return dateB.compareTo(dateA);
-                } catch (ParseException var10) {
-                    String lastUpdateA = a.getLastUpdateTime() != null ? a.getLastUpdateTime() : a.getCreationTime();
-                    String lastUpdateB = b.getLastUpdateTime() != null ? b.getLastUpdateTime() : b.getCreationTime();
-
-                    try {
-                        sdf.parse(lastUpdateA);
-                        return -1;
-                    } catch (ParseException var9) {
-                        try {
-                            sdf.parse(lastUpdateB);
-                            return 1;
-                        } catch (ParseException var8) {
-                            return lastUpdateB.compareTo(lastUpdateA);
-                        }
-                    }
-                }
-            });
-            case 3 -> items.sort((a, b) -> {
-                try {
-                    String lastUpdateA = a.getLastUpdateTime() != null ? a.getLastUpdateTime() : a.getCreationTime();
-                    String lastUpdateB = b.getLastUpdateTime() != null ? b.getLastUpdateTime() : b.getCreationTime();
-                    Date dateA = sdf.parse(lastUpdateA);
-                    Date dateB = sdf.parse(lastUpdateB);
-                    return dateA.compareTo(dateB);
-                } catch (ParseException var10) {
-                    String lastUpdateA = a.getLastUpdateTime() != null ? a.getLastUpdateTime() : a.getCreationTime();
-                    String lastUpdateB = b.getLastUpdateTime() != null ? b.getLastUpdateTime() : b.getCreationTime();
-
-                    try {
-                        sdf.parse(lastUpdateA);
-                        return -1;
-                    } catch (ParseException var9) {
-                        try {
-                            sdf.parse(lastUpdateB);
-                            return 1;
-                        } catch (ParseException var8) {
-                            return lastUpdateA.compareTo(lastUpdateB);
-                        }
-                    }
-                }
-            });
+    private void sortItems(List<ItemTrackingManager.ItemInfo> items, SortType sortType, Player player) {
+        switch (sortType) {
+            case CREATION_DATE_DESC:
+                items.sort((a, b) -> Long.compare(b.getCreationTime(), a.getCreationTime()));
+                break;
+            case CREATION_DATE_ASC:
+                items.sort((a, b) -> Long.compare(a.getCreationTime(), b.getCreationTime()));
+                break;
+            case LAST_UPDATE_DESC:
+                items.sort((a, b) -> Long.compare(b.getLastUpdateTime(), a.getLastUpdateTime()));
+                break;
+            case LAST_UPDATE_ASC:
+                items.sort((a, b) -> Long.compare(a.getLastUpdateTime(), b.getLastUpdateTime()));
+                break;
+            case ALPHABETICAL_ASC:
+                items.sort((a, b) -> a.getItemName().compareToIgnoreCase(b.getItemName()));
+                break;
+            case ALPHABETICAL_DESC:
+                items.sort((a, b) -> b.getItemName().compareToIgnoreCase(a.getItemName()));
+                break;
+            case PROXIMITY_ASC:
+                Location playerLoc = player.getLocation();
+                items.sort((a, b) -> Double.compare(a.distanceTo(playerLoc), b.distanceTo(playerLoc)));
+                break;
+            case PROXIMITY_DESC:
+                Location playerLocDesc = player.getLocation();
+                items.sort((a, b) -> Double.compare(b.distanceTo(playerLocDesc), a.distanceTo(playerLocDesc)));
+                break;
         }
-
     }
 
     public void openHistoryMenu(Player player, int page) {
@@ -225,7 +168,9 @@ public class HistoryGUI {
 
         this.addGlassPaneFiller(gui, 0, 8);
         this.addGlassPaneFiller(gui, 36, 44);
-        this.addSortButton(gui, playerId);
+
+        this.addSortButton(gui, player);
+
         int startIndex = (page - 1) * 27;
         int endIndex = Math.min(startIndex + 27, itemsToShow.size());
 
@@ -239,19 +184,18 @@ public class HistoryGUI {
         player.openInventory(gui);
     }
 
-    private void addSortButton(Inventory inventory, UUID playerId) {
+    private void addSortButton(Inventory inventory, Player player) {
+        UUID playerId = player.getUniqueId();
+
         ItemStack sortButton = new ItemStack(Material.HOPPER);
         ItemMeta sortMeta = sortButton.getItemMeta();
         SortType currentSort = this.getCurrentSortType(playerId);
 
-        // --- CORRECCIÓN DE ITÁLICA ---
         String sortTitleStr = "§fMenú &8▸ §x§b§a§d§3§d§5Orden";
         String legacyFormattedTitle = this.formatMessage(sortTitleStr);
         Component sortTitleComponent = LegacyComponentSerializer.legacySection().deserialize(legacyFormattedTitle);
 
-        // Aquí forzamos que no sea itálica
         sortMeta.displayName(sortTitleComponent.style(style -> style.decoration(TextDecoration.ITALIC, false)));
-        // --- FIN CORRECCIÓN ---
 
         List<String> sortLore = new ArrayList();
         sortLore.add("§8Descripción");
@@ -259,7 +203,14 @@ public class HistoryGUI {
 
         for(SortType type : HistoryGUI.SortType.values()) {
             String prefix = type == currentSort ? "&a▶ " : "&7▶ ";
-            sortLore.add(ChatColor.translateAlternateColorCodes('&', prefix + type.getDisplayName()));
+
+            if (type == SortType.PROXIMITY_ASC || type == SortType.PROXIMITY_DESC) {
+                if (player != null && player.isOnline() && player.getWorld() != null) {
+                    sortLore.add(ChatColor.translateAlternateColorCodes('&', prefix + type.getDisplayName()));
+                }
+            } else {
+                sortLore.add(ChatColor.translateAlternateColorCodes('&', prefix + type.getDisplayName()));
+            }
         }
 
         sortLore.add("");
@@ -315,7 +266,7 @@ public class HistoryGUI {
         UUID playerId = player.getUniqueId();
         this.playersInSearchMode.remove(playerId);
         this.playerSearchResults.remove(playerId);
-        this.playerLastSearch.remove(playerId); // <-- AÑADIR ESTA LÍNEA
+        this.playerLastSearch.remove(playerId);
         this.setCurrentPage(playerId, 1);
         player.sendMessage(miniMessage.deserialize(plugin.getPrefix() + "<red>Modo de búsqueda cancelado"));
         this.openHistoryMenu(player, 1);
@@ -325,7 +276,7 @@ public class HistoryGUI {
         UUID playerId = player.getUniqueId();
         this.playersInSearchMode.remove(playerId);
         this.playerSearchResults.remove(playerId);
-        this.playerLastSearch.remove(playerId); // <-- AÑADIR ESTA LÍNEA
+        this.playerLastSearch.remove(playerId);
         this.setCurrentPage(playerId, 1);
         this.openHistoryMenu(player, 1);
     }
@@ -334,7 +285,7 @@ public class HistoryGUI {
         UUID playerId = player.getUniqueId();
         this.playersInSearchMode.remove(playerId);
         this.playerSearchResults.remove(playerId);
-        this.playerLastSearch.remove(playerId); // <-- AÑADIR ESTA LÍNEA
+        this.playerLastSearch.remove(playerId);
         this.setCurrentPage(playerId, 1);
     }
 
@@ -346,16 +297,10 @@ public class HistoryGUI {
         }
     }
 
-    /**
-     * Comprueba si el jugador está cambiando de menú.
-     */
     public boolean isSwitchingMenu(Player player) {
         return isSwitchingMenu.contains(player.getUniqueId());
     }
 
-    /**
-     * Obtiene el último término de búsqueda del jugador.
-     */
     public String getLastSearchTerm(UUID playerId) {
         return this.playerLastSearch.get(playerId);
     }
@@ -372,7 +317,7 @@ public class HistoryGUI {
         filler.setItemMeta(fillerMeta);
 
         for(int i = startSlot; i <= endSlot; ++i) {
-            if (i != 3 && i != 5) { // Evitar sobreescribir el botón de sort (3) y search (5)
+            if (i != 3 && i != 5) {
                 inventory.setItem(i, filler);
             }
         }
@@ -394,19 +339,12 @@ public class HistoryGUI {
         ItemStack displayItem = new ItemStack(material);
         ItemMeta meta = displayItem.getItemMeta();
 
-        // --- CORRECCIÓN DE ITÁLICA ---
-        // 1. Añadimos "<!i>" (MiniMessage para no-itálica) o "&r" (legacy) al inicio
-        //    Usaremos "&r" ya que formatMessage usa ChatColor.
         String displayNameStr = this.plugin.getConfig().getString("menu.item-display-name", "&r&6%item_name%")
                 .replace("%item_name%", info.getItemName())
                 .replace("%item_id%", info.getItemId());
 
-        // 2. Formateamos y deserializamos a Componente
         Component displayNameComponent = LegacyComponentSerializer.legacySection().deserialize(this.formatMessage(displayNameStr));
-
-        // 3. Forzamos que no sea itálica
         meta.displayName(displayNameComponent.style(style -> style.decoration(TextDecoration.ITALIC, false)));
-        // --- FIN CORRECCIÓN ---
 
         meta.addAttributeModifier(Attribute.MAX_HEALTH, new AttributeModifier(UUID.randomUUID(), "nigga", (double)1.0F, Operation.ADD_NUMBER, EquipmentSlot.BODY));
 
@@ -422,15 +360,24 @@ public class HistoryGUI {
         var10001 = info.getCurrentOwnerName();
         lore.add("&fPoseedor: &7" + var10001 + " " + currentOwnerStatus);
         lore.add("&fID: &7" + info.getItemId());
-        lore.add("&fFecha: &7" + info.getCreationTime());
-        if (info.getLastUpdateTime() != null && !info.getLastUpdateTime().equals(info.getCreationTime())) {
-            lore.add("&fÚltima actualización: &7" + info.getLastUpdateTime());
+
+        lore.add("&fFecha: &7" + sdf.format(new Date(info.getCreationTime())));
+        if (info.getLastUpdateTime() != 0 && info.getLastUpdateTime() != info.getCreationTime()) {
+            lore.add("&fÚltima actualización: &7" + sdf.format(new Date(info.getLastUpdateTime())));
         }
 
         lore.add("");
-        lore.add("&e➡ &e&n¡Click&r&e para examinar!");
+        lore.add("&fÚltima Ubicación:");
+        lore.add("&8• &fMundo: &7" + (info.getWorld() != null ? info.getWorld() : "Desconocido"));
+        lore.add("&8• &fX: &7" + String.format("%.1f", info.getX()));
+        lore.add("&8• &fY: &7" + String.format("%.1f", info.getY()));
+        lore.add("&8• &fZ: &7" + String.format("%.1f", info.getZ()));
 
-        // El lore está bien, el usuario dijo que no estaba en itálica
+        lore.add("");
+        // --- INICIO DE LA MODIFICACIÓN ---
+        lore.add("&e➡ &e&n¡Click para última ubicación!");
+        // --- FIN DE LA MODIFICACIÓN ---
+
         List<String> coloredLore = new ArrayList();
         for(String line : lore) {
             coloredLore.add(ChatColor.translateAlternateColorCodes('&', line));
@@ -448,46 +395,35 @@ public class HistoryGUI {
         String titleStr = plugin.getConfig().getString("delete-confirmation.title", "        ᴇʟɪᴍɪɴᴀʀ ʀᴇɢɪsᴛʀᴏ");
         Inventory gui = Bukkit.createInventory(new DeleteConfirmHolder(), InventoryType.HOPPER, miniMessage.deserialize(titleStr));
 
-        // --- Botón Confirmar ---
         Material confirmMat = Material.valueOf(plugin.getConfig().getString("delete-confirmation.confirm-material", "LIME_STAINED_GLASS_PANE"));
         ItemStack confirmButton = new ItemStack(confirmMat);
         ItemMeta confirmMeta = confirmButton.getItemMeta();
-
         String confirmText = plugin.getConfig().getString("delete-confirmation.confirm-text", "<!i><#33FF33><b>CONFIRMAR BORRADO");
-        confirmMeta.displayName(miniMessage.deserialize(confirmText)); // MiniMessage quita la itálica con <!i>
-
+        confirmMeta.displayName(miniMessage.deserialize(confirmText));
         List<Component> confirmLoreComponents = new ArrayList<>();
         for (String line : plugin.getConfig().getStringList("delete-confirmation.confirm-lore")) {
-            confirmLoreComponents.add(miniMessage.deserialize(line)); // MiniMessage quita la itálica con <!i>
+            confirmLoreComponents.add(miniMessage.deserialize(line));
         }
         confirmMeta.lore(confirmLoreComponents);
-
         confirmMeta.getPersistentDataContainer().set(new NamespacedKey(plugin, "confirm-action"), PersistentDataType.STRING, "delete");
         addAllItemFlags(confirmMeta);
         confirmButton.setItemMeta(confirmMeta);
 
-        // --- Botón Cancelar ---
         Material cancelMat = Material.valueOf(plugin.getConfig().getString("delete-confirmation.cancel-material", "RED_STAINED_GLASS_PANE"));
         ItemStack cancelButton = new ItemStack(cancelMat);
         ItemMeta cancelMeta = cancelButton.getItemMeta();
-
         String cancelText = plugin.getConfig().getString("delete-confirmation.cancel-text", "<!i><#FF1313><b>CANCELAR");
-        cancelMeta.displayName(miniMessage.deserialize(cancelText)); // MiniMessage quita la itálica con <!i>
-
+        cancelMeta.displayName(miniMessage.deserialize(cancelText));
         List<Component> cancelLoreComponents = new ArrayList<>();
         for (String line : plugin.getConfig().getStringList("delete-confirmation.cancel-lore")) {
-            cancelLoreComponents.add(miniMessage.deserialize(line)); // MiniMessage quita la itálica con <!i>
+            cancelLoreComponents.add(miniMessage.deserialize(line));
         }
         cancelMeta.lore(cancelLoreComponents);
-
         cancelMeta.getPersistentDataContainer().set(new NamespacedKey(plugin, "confirm-action"), PersistentDataType.STRING, "cancel");
         addAllItemFlags(cancelMeta);
         cancelButton.setItemMeta(cancelMeta);
 
-        // --- Item a borrar (Display) ---
-        ItemStack displayItem = createDisplayItem(info); // Esto ya no tendrá itálica por la corrección de arriba
-
-        // --- Setear items ---
+        ItemStack displayItem = createDisplayItem(info);
         gui.setItem(0, confirmButton);
         gui.setItem(2, displayItem);
         gui.setItem(4, cancelButton);
@@ -501,7 +437,6 @@ public class HistoryGUI {
         String titleStr = "      ᴇʟɪᴍɪɴᴀʀ ʀᴇɢɪsᴛʀᴏs (x" + items.size() + ")";
         Inventory gui = Bukkit.createInventory(new BulkDeleteConfirmHolder(), InventoryType.HOPPER, miniMessage.deserialize(titleStr));
 
-        // --- Botón Confirmar ---
         Material confirmMat = Material.valueOf(plugin.getConfig().getString("delete-confirmation.confirm-material", "LIME_STAINED_GLASS_PANE"));
         ItemStack confirmButton = new ItemStack(confirmMat);
         ItemMeta confirmMeta = confirmButton.getItemMeta();
@@ -515,7 +450,6 @@ public class HistoryGUI {
         addAllItemFlags(confirmMeta);
         confirmButton.setItemMeta(confirmMeta);
 
-        // --- Botón Cancelar ---
         Material cancelMat = Material.valueOf(plugin.getConfig().getString("delete-confirmation.cancel-material", "RED_STAINED_GLASS_PANE"));
         ItemStack cancelButton = new ItemStack(cancelMat);
         ItemMeta cancelMeta = cancelButton.getItemMeta();
@@ -527,12 +461,10 @@ public class HistoryGUI {
         addAllItemFlags(cancelMeta);
         cancelButton.setItemMeta(cancelMeta);
 
-        // --- Item de Información (en el centro) ---
         ItemStack infoItem = new ItemStack(Material.CHEST);
         ItemMeta infoMeta = infoItem.getItemMeta();
-        // Cumplimos tu petición:
         infoMeta.displayName(miniMessage.deserialize("<!i>Información > Múltiples Objetos"));
-        int amount = Math.max(1, Math.min(64, items.size())); // De 1 a 64
+        int amount = Math.max(1, Math.min(64, items.size()));
         infoItem.setAmount(amount);
         List<Component> infoLore = new ArrayList<>();
         infoLore.add(miniMessage.deserialize("<!i><gray>Items encontrados: <white>" + items.size()));
@@ -542,23 +474,21 @@ public class HistoryGUI {
         addAllItemFlags(infoMeta);
         infoItem.setItemMeta(infoMeta);
 
-        // --- Setear items ---
         gui.setItem(0, confirmButton);
         gui.setItem(2, infoItem);
         gui.setItem(4, cancelButton);
 
-        plugin.getHistoryGUI().setSwitchingMenu(player, true); // Marcamos como menú de cambio
+        plugin.getHistoryGUI().setSwitchingMenu(player, true);
         player.openInventory(gui);
     }
+
 
     private void addNavigationButtons(Inventory inventory, int currentPage, int totalPages, UUID playerId) {
         if (currentPage > 1) {
             ItemStack prevButton = new ItemStack(Material.ARROW);
             ItemMeta prevMeta = prevButton.getItemMeta();
-            // --- CORRECCIÓN ITÁLICA ---
             prevMeta.displayName(LegacyComponentSerializer.legacySection().deserialize(this.formatMessage("&r" + this.plugin.getConfig().getString("menu.previous-page", "&fPágina &8▸ &cAnterior")))
                     .style(style -> style.decoration(TextDecoration.ITALIC, false)));
-            // --- FIN CORRECCIÓN ---
             List<String> prevLore = new ArrayList();
             prevLore.add("§8Descripción");
             prevLore.add("");
@@ -571,10 +501,8 @@ public class HistoryGUI {
 
         ItemStack closeButton = new ItemStack(Material.BARRIER);
         ItemMeta closeMeta = closeButton.getItemMeta();
-        // --- CORRECCIÓN ITÁLICA ---
         closeMeta.displayName(LegacyComponentSerializer.legacySection().deserialize(this.formatMessage("&r" + this.plugin.getConfig().getString("menu.close", "&fMenú &8▸ §x§f§f§5§8§4§1Cerrar")))
                 .style(style -> style.decoration(TextDecoration.ITALIC, false)));
-        // --- FIN CORRECCIÓN ---
         List<String> closeLore = new ArrayList();
         closeLore.add("§8Descripción");
         closeLore.add("");
@@ -587,10 +515,8 @@ public class HistoryGUI {
         if (currentPage < totalPages) {
             ItemStack nextButton = new ItemStack(Material.ARROW);
             ItemMeta nextMeta = nextButton.getItemMeta();
-            // --- CORRECCIÓN ITÁLICA ---
             nextMeta.displayName(LegacyComponentSerializer.legacySection().deserialize(this.formatMessage("&r" + this.plugin.getConfig().getString("menu.next-page", "&fPágina &8▸ &aSiguiente")))
                     .style(style -> style.decoration(TextDecoration.ITALIC, false)));
-            // --- FIN CORRECCIÓN ---
             List<String> nextLore = new ArrayList();
             nextLore.add("§8Descripción");
             nextLore.add("");
@@ -605,10 +531,8 @@ public class HistoryGUI {
         if (isInSearch) {
             ItemStack search = new ItemStack(Material.RED_CANDLE);
             ItemMeta searchMeta = search.getItemMeta();
-            // --- CORRECCIÓN ITÁLICA ---
             searchMeta.displayName(LegacyComponentSerializer.legacySection().deserialize(this.formatMessage("&r" + this.plugin.getConfig().getString("menu.clear-search", "&fMenú &8▸ §x§7§6§c§e§f§fBuscar")))
                     .style(style -> style.decoration(TextDecoration.ITALIC, false)));
-            // --- FIN CORRECCIÓN ---
             List<String> clearLore = new ArrayList();
             clearLore.add("§8Descripción");
             clearLore.add("");
@@ -620,10 +544,8 @@ public class HistoryGUI {
         } else {
             ItemStack search = new ItemStack(Material.OAK_SIGN);
             ItemMeta searchMeta = search.getItemMeta();
-            // --- CORRECCIÓN ITÁLICA ---
             searchMeta.displayName(LegacyComponentSerializer.legacySection().deserialize(this.formatMessage("&r" + this.plugin.getConfig().getString("menu.search", "&fMenú &8▸ §x§7§6§c§e§f§fBuscar")))
                     .style(style -> style.decoration(TextDecoration.ITALIC, false)));
-            // --- FIN CORRECCIÓN ---
             List<String> searchLore = new ArrayList();
             searchLore.add("§8Descripción");
             searchLore.add("");
@@ -642,16 +564,11 @@ public class HistoryGUI {
 
     }
 
-    /**
-     * Este método traduce códigos legacy (&) y hex (#) a códigos '§'.
-     * Es necesario para los métodos de Bukkit que esperan un String formateado.
-     */
     private String formatMessage(String message) {
         if (message == null) {
             return "";
         } else {
             String prefix = this.plugin.getConfig().getString("prefix", "&7[&cMagmaItems&7] ");
-            // Reemplaza '§' por '&' primero, para que ChatColor pueda parsear todo
             message = message.replace("§", "&");
             return ChatColor.translateAlternateColorCodes('&', message.replace("%prefix%", prefix));
         }
@@ -661,7 +578,11 @@ public class HistoryGUI {
         CREATION_DATE_DESC("Fecha [Reciente]"),
         CREATION_DATE_ASC("Fecha [Antigua]"),
         LAST_UPDATE_DESC("Actualización [Reciente]"),
-        LAST_UPDATE_ASC("Actualización [Antigua]");
+        LAST_UPDATE_ASC("Actualización [Antigua]"),
+        ALPHABETICAL_ASC("Alfabético [A-Z]"),
+        ALPHABETICAL_DESC("Alfabético [Z-A]"),
+        PROXIMITY_ASC("Proximidad [Cercano]"),
+        PROXIMITY_DESC("Proximidad [Lejano]");
 
         private final String displayName;
 
@@ -679,24 +600,17 @@ public class HistoryGUI {
         }
     }
 
-    /**
-     * Holder para el inventario de confirmación de borrado.
-     */
     public class DeleteConfirmHolder implements InventoryHolder {
         @Override
         public Inventory getInventory() {
-            return null; // Correcto
+            return null;
         }
     }
 
-    /**
-     * Holder para el inventario de confirmación de borrado MASIVO.
-     */
     public class BulkDeleteConfirmHolder implements InventoryHolder {
         @Override
         public Inventory getInventory() {
-            return null; // Correcto
+            return null;
         }
     }
-
 }

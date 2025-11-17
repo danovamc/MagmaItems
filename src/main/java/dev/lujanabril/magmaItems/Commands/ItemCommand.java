@@ -674,7 +674,7 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
                 originalOwner = player.getName();
             }
 
-            this.itemTrackingManager.registerItem(uniqueId, player.getUniqueId().toString(), player.getName(), itemName, originalOwner);
+            this.itemTrackingManager.registerItem(uniqueId, player, itemName, originalOwner);
             this.itemTrackingManager.updateItemMaterial(uniqueId, item.getType());
         }
 
