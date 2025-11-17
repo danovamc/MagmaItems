@@ -22,6 +22,7 @@ import org.bukkit.persistence.PersistentDataContainer; // Importante
 import org.bukkit.persistence.PersistentDataType; // Importante
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class HistoryGUIListener implements Listener {
     private final Main plugin;
@@ -308,6 +309,81 @@ public class HistoryGUIListener implements Listener {
         }
     }
 
+
+    @EventHandler
+    public void onBulkDeleteConfirmClick(InventoryClickEvent event) {
+        // Comprueba si es el inventario de confirmación MASIVA
+        if (!(event.getInventory().getHolder() instanceof HistoryGUI.BulkDeleteConfirmHolder)) {
+            return;
+        }
+
+        event.setCancelled(true);
+        if (!(event.getWhoClicked() instanceof Player)) return;
+
+        Player player = (Player) event.getWhoClicked();
+        ItemStack clicked = event.getCurrentItem();
+
+        if (clicked == null || !clicked.hasItemMeta()) return;
+
+        ItemMeta meta = clicked.getItemMeta();
+        PersistentDataContainer container = meta.getPersistentDataContainer();
+        NamespacedKey actionKey = new NamespacedKey(plugin, "confirm-action");
+
+        if (container.has(actionKey, PersistentDataType.STRING)) {
+            String action = container.get(actionKey, PersistentDataType.STRING);
+            // Obtenemos la LISTA de items pendientes
+            List<ItemTrackingManager.ItemInfo> items = plugin.getHistoryGUI().getItemsPendingBulkDeletion().remove(player.getUniqueId());
+
+            if ("bulk-delete".equals(action)) {
+                if (items != null && !items.isEmpty()) {
+
+                    // Extraemos las IDs
+                    List<String> itemIds = items.stream()
+                            .map(ItemTrackingManager.ItemInfo::getItemId)
+                            .collect(Collectors.toList());
+
+                    // Usamos los métodos masivos que creamos
+                    trackingManager.logBulkDeletion(player, items);
+                    trackingManager.removeItemsTracking(itemIds);
+                    trackingManager.addItemsToRemovalList(itemIds); // Añadir a la blacklist
+
+                    player.sendMessage(miniMessage.deserialize(prefix + "<green>Registros de <yellow>" + items.size() + "<green> items eliminados exitosamente."));
+                    player.playSound(Sound.sound(org.bukkit.Sound.ENTITY_PLAYER_LEVELUP.key(), Source.MASTER, 0.5F, 1.2F));
+
+                    player.closeInventory();
+
+                    // Refrescar la GUI principal
+                    HistoryGUI historyGUI = plugin.getHistoryGUI();
+                    boolean wasSearching = historyGUI.isInSearchMode(player);
+
+                    plugin.getServer().getScheduler().runTask(plugin, () -> {
+                        if (wasSearching) {
+                            String lastSearch = historyGUI.getLastSearchTerm(player.getUniqueId());
+                            if (lastSearch != null) {
+                                historyGUI.processSearch(player, lastSearch);
+                            } else {
+                                historyGUI.openHistoryMenu(player, 1);
+                            }
+                        } else {
+                            historyGUI.openHistoryMenu(player, 1);
+                        }
+                    });
+
+                } else {
+                    player.sendMessage(miniMessage.deserialize(prefix + "<red>Error. No se encontraron los items a eliminar. Inténtalo de nuevo."));
+                    player.closeInventory();
+                }
+            } else if ("cancel".equals(action)) {
+                player.closeInventory();
+                player.playSound(Sound.sound(org.bukkit.Sound.UI_BUTTON_CLICK.key(), Source.MASTER, 1.0F, 1.0F));
+                // Reabrir el historial principal
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    plugin.getHistoryGUI().openHistoryMenu(player, plugin.getHistoryGUI().getCurrentPage(player.getUniqueId()));
+                });
+            }
+        }
+    }
+
     /**
      * Limpia el item pendiente si se cierra el menú de confirmación.
      */
@@ -319,5 +395,12 @@ public class HistoryGUIListener implements Listener {
         }
     }
 
-    // --- FIN DE MÉTODOS AÑADIDOS ---
+    // --- MÉTODO NUEVO AÑADIDO ---
+    @EventHandler
+    public void onBulkDeleteConfirmClose(InventoryCloseEvent event) {
+        // Limpia el map si el jugador cierra el inventario de confirmación MASIVA sin elegir
+        if (event.getInventory().getHolder() instanceof HistoryGUI.BulkDeleteConfirmHolder) {
+            plugin.getHistoryGUI().getItemsPendingBulkDeletion().remove(event.getPlayer().getUniqueId());
+        }
+    }
 }

@@ -521,6 +521,72 @@ public class ItemTrackingManager {
 
     }
 
+    /**
+     * Registra la eliminación de una lista de items en el log.
+     */
+    public void logBulkDeletion(Player remover, List<ItemInfo> itemsInfo) {
+        if (itemsInfo == null || itemsInfo.isEmpty()) return;
+
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        String timestamp = sdf.format(new Date());
+        String removerName = remover.getName();
+        String removerUuid = remover.getUniqueId().toString();
+        String deletionDate = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
+
+        for (ItemInfo itemInfo : itemsInfo) {
+            if (itemInfo == null) continue;
+
+            String logKey = "deletions." + timestamp + "_" + itemInfo.getItemId(); // Usar timestamp base + ID para agrupar
+            this.deletionLogConfig.set(logKey + ".deleter-name", removerName);
+            this.deletionLogConfig.set(logKey + ".deleter-uuid", removerUuid);
+            this.deletionLogConfig.set(logKey + ".item-id", itemInfo.getItemId());
+            this.deletionLogConfig.set(logKey + ".item-name", itemInfo.getItemName());
+            this.deletionLogConfig.set(logKey + ".original-owner", itemInfo.getOriginalOwnerName());
+            this.deletionLogConfig.set(logKey + ".last-holder", itemInfo.getCurrentOwnerName());
+            this.deletionLogConfig.set(logKey + ".deletion-date", deletionDate);
+        }
+
+        this.saveDeletionLog(); // Guardar solo una vez
+    }
+
+    /**
+     * Elimina una lista de IDs del archivo de seguimiento (tracking).
+     */
+    public void removeItemsTracking(List<String> uniqueIds) {
+        if (uniqueIds == null || uniqueIds.isEmpty()) return;
+        boolean changed = false;
+
+        for (String uniqueId : uniqueIds) {
+            if (this.itemTrackingCache.containsKey(uniqueId)) {
+                this.trackingConfig.set("Tracked-Items." + uniqueId, null);
+                this.itemTrackingCache.remove(uniqueId);
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            this.saveTracking(); // Guardar solo una vez
+        }
+    }
+
+    /**
+     * Añade una lista de IDs a la lista de borrado físico (blacklist).
+     */
+    public void addItemsToRemovalList(List<String> itemIds) {
+        if (itemIds == null || itemIds.isEmpty()) return;
+        boolean changed = false;
+
+        for (String itemId : itemIds) {
+            if (this.idsToRemoveCache.add(itemId)) {
+                plugin.getLogger().info("ID: " + itemId + " añadida a la lista de borrado físico.");
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            saveRemovalList(); // Guardar solo una vez
+        }
+    }
 
     public static class ItemInfo {
         private String itemId;

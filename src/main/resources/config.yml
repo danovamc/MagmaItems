@@ -103,8 +103,8 @@ messages:
   cannot-drop: "<red><b>ERROR</b> <dark_gray>▸</dark_gray> <white>¡No puedes tirar este ítem!</white>"
   cannot-interact: "<red><b>ERROR</b> <dark_gray>▸</dark_gray> <white>¡No puedes interactuar con este ítem!</white>"
 
-  history-usage: "<gray>Uso: /magmaitem history [open|remove <ID>]"
-  history-remove-usage: "<gray>Uso: /magmaitem history remove <ID>"
+  history-usage: "<gray>Uso: /magmaitem history [open|remove <ID|hand|inventory>]"
+  history-remove-usage: "<gray>Uso: /magmaitem history remove <ID|hand|inventory>]"
   history-id-not-found: "<red>ID de seguimiento '<yellow>%id%<red>' no encontrada."
   history-remove-success: "<green>Datos de seguimiento para la ID '<yellow>%id%<green>' eliminados exitosamente."
 

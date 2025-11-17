@@ -32,3 +32,4 @@ dev\lujanabril\magmaItems\Managers\CustomItemManager$CustomItemData.class
 dev\lujanabril\magmaItems\GUI\HistoryGUI$DeleteConfirmHolder.class
 dev\lujanabril\magmaItems\GUI\HistoryGUI$SortType.class
 dev\lujanabril\magmaItems\Listeners\CustomItemListener$1.class
+dev\lujanabril\magmaItems\GUI\HistoryGUI$BulkDeleteConfirmHolder.class

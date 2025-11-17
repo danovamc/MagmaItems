@@ -138,7 +138,24 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
 
             switch (subCommand) {
                 case "remove":
-                    return this.handleHistoryRemove(sender, args);
+                    // --- LÓGICA MODIFICADA ---
+                    if (args.length < 3) {
+                        String usageMsg = this.parsePlaceholders(this.plugin.getConfig().getString("messages.history-remove-usage", "<gray>Usage: /magmaitem history [open|remove <ID|hand|inventory>]"));
+                        sender.sendMessage(this.miniMessage.deserialize(this.prefix + usageMsg));
+                        return true;
+                    }
+
+                    String target = args[2].toLowerCase();
+                    if (target.equals("hand")) {
+                        return this.handleHistoryRemoveHand(sender);
+                    } else if (target.equals("inventory")) {
+                        // Llamamos al nuevo método para 'inventory'
+                        return this.handleHistoryRemoveInventory(sender);
+                    } else {
+                        // Llamamos al método antiguo para '<ID>'
+                        return this.handleHistoryRemoveId(sender, args);
+                    }
+                    // --- FIN DE LA MODIFICACIÓN ---
                 default:
                     String usageMsg = this.parsePlaceholders(this.plugin.getConfig().getString("messages.history-usage", "<gray>Usage: /magmaitem history [open|remove]"));
                     sender.sendMessage(this.miniMessage.deserialize(this.prefix + usageMsg));
@@ -151,7 +168,7 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
-    private boolean handleHistoryRemove(CommandSender sender, String[] args) {
+    private boolean handleHistoryRemoveId(CommandSender sender, String[] args) {
         // Check 1: Debe ser un jugador para abrir la GUI
         if (!(sender instanceof Player)) {
             String playerOnly = this.parsePlaceholders(this.plugin.getConfig().getString("messages.player-only", "<red>This command can only be used by players."));
@@ -188,6 +205,91 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
 
         // Acción: Abrir el menú de confirmación
         this.historyGUI.openDeleteConfirmation(player, info);
+        return true;
+    }
+
+    // --- MÉTODO NUEVO AÑADIDO ---
+    private boolean handleHistoryRemoveHand(CommandSender sender) {
+        // Check 1: Debe ser un jugador
+        if (!(sender instanceof Player player)) {
+            String playerOnly = this.parsePlaceholders(this.plugin.getConfig().getString("messages.player-only", "<red>This command can only be used by players."));
+            sender.sendMessage(this.miniMessage.deserialize(this.prefix + playerOnly));
+            return true;
+        }
+
+        // Check 2: El jugador debe estar en la whitelist
+        List<String> whitelist = plugin.getConfig().getStringList("Id-remover-whitelist");
+        if (!whitelist.contains(player.getName())) {
+            String noPermMsg = this.parsePlaceholders(this.plugin.getConfig().getString("messages.no-permission", "<red>No tienes permiso para usar este comando."));
+            sender.sendMessage(this.miniMessage.deserialize(this.prefix + noPermMsg));
+            return true;
+        }
+
+        // Check 3: Debe tener un item en la mano
+        ItemStack heldItem = player.getInventory().getItemInMainHand();
+        if (heldItem == null || heldItem.getType().isAir()) {
+            String noItemMsg = this.parsePlaceholders(this.plugin.getConfig().getString("messages.no-item-in-hand", "<red>Debes sostener un ítem en tu mano principal."));
+            sender.sendMessage(this.miniMessage.deserialize(this.prefix + noItemMsg));
+            return true;
+        }
+
+        // Check 4: El item debe tener un ID único
+        String uniqueId = this.getUniqueId(heldItem); // Usamos el helper que creamos
+        if (uniqueId == null) {
+            sender.sendMessage(this.miniMessage.deserialize(this.prefix + "<red>El ítem que sostienes no tiene una ID única registrada."));
+            return true;
+        }
+
+        // Check 5: La ID debe existir en el historial
+        ItemTrackingManager.ItemInfo info = this.itemTrackingManager.getItemInfo(uniqueId);
+        if (info == null) {
+            String notFound = this.parsePlaceholders(this.plugin.getConfig().getString("messages.history-id-not-found", "<red>ID de seguimiento '<yellow>%id%<red>' no encontrada."))
+                    .replace("%id%", uniqueId);
+            sender.sendMessage(this.miniMessage.deserialize(this.prefix + notFound));
+            return true;
+        }
+
+        // Acción: Abrir el menú de confirmación
+        this.historyGUI.openDeleteConfirmation(player, info);
+        return true;
+    }
+
+    private boolean handleHistoryRemoveInventory(CommandSender sender) {
+        // Check 1: Debe ser un jugador
+        if (!(sender instanceof Player player)) {
+            String playerOnly = this.parsePlaceholders(this.plugin.getConfig().getString("messages.player-only", "<red>This command can only be used by players."));
+            sender.sendMessage(this.miniMessage.deserialize(this.prefix + playerOnly));
+            return true;
+        }
+
+        // Check 2: El jugador debe estar en la whitelist
+        List<String> whitelist = plugin.getConfig().getStringList("Id-remover-whitelist");
+        if (!whitelist.contains(player.getName())) {
+            String noPermMsg = this.parsePlaceholders(this.plugin.getConfig().getString("messages.no-permission", "<red>No tienes permiso para usar este comando."));
+            sender.sendMessage(this.miniMessage.deserialize(this.prefix + noPermMsg));
+            return true;
+        }
+
+        // Check 3: Escanear inventario
+        List<ItemTrackingManager.ItemInfo> itemsToScan = new ArrayList<>();
+        for (ItemStack item : player.getInventory().getContents()) {
+            String uniqueId = this.getUniqueId(item); // Usamos el helper que ya teníamos
+            if (uniqueId != null) {
+                ItemTrackingManager.ItemInfo info = this.itemTrackingManager.getItemInfo(uniqueId);
+                if (info != null) {
+                    itemsToScan.add(info);
+                }
+            }
+        }
+
+        // Check 4: Verificar si se encontraron items
+        if (itemsToScan.isEmpty()) {
+            sender.sendMessage(this.miniMessage.deserialize(this.prefix + "<red>No se encontraron items con ID única en tu inventario."));
+            return true;
+        }
+
+        // Acción: Abrir el menú de confirmación masiva
+        this.historyGUI.openBulkDeleteConfirmation(player, itemsToScan);
         return true;
     }
 
@@ -605,6 +707,17 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
         }
     }
 
+    private String getUniqueId(ItemStack item) {
+        if (item != null && item.hasItemMeta()) {
+            ItemMeta meta = item.getItemMeta();
+            PersistentDataContainer container = meta.getPersistentDataContainer();
+            if (container.has(this.itemIdKey, PersistentDataType.STRING)) {
+                return container.get(this.itemIdKey, PersistentDataType.STRING);
+            }
+        }
+        return null;
+    }
+
     // --- MÉTODO CORREGIDO ---
     private String generateUniqueId() {
         StringBuilder idBuilder = new StringBuilder();
@@ -696,6 +809,9 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
                 if (args.length == 2) {
                     completions.addAll(Arrays.asList("open", "remove"));
                 } else if (args.length == 3 && args[1].equalsIgnoreCase("remove")) {
+                    // Añadimos 'hand' e 'inventory'
+                    completions.add("hand");
+                    completions.add("inventory"); // <-- AÑADIDO
                     completions.addAll(this.itemTrackingManager.getAllItemIds());
                 }
             } else if (args[0].equalsIgnoreCase("unblacklist")) {

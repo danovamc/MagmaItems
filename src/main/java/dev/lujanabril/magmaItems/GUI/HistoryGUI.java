@@ -40,6 +40,9 @@ public class HistoryGUI {
     private final Map<UUID, SortType> playerSortTypes = new HashMap();
     private final Map<UUID, ItemTrackingManager.ItemInfo> itemPendingDeletion = new HashMap();
 
+    private final Map<UUID, List<ItemTrackingManager.ItemInfo>> itemsPendingBulkDeletion = new HashMap<>();
+    public Map<UUID, List<ItemTrackingManager.ItemInfo>> getItemsPendingBulkDeletion() { return this.itemsPendingBulkDeletion; }
+
     private final Set<UUID> isSwitchingMenu = new HashSet<>();
     private final Map<UUID, String> playerLastSearch = new HashMap<>();
 
@@ -492,6 +495,61 @@ public class HistoryGUI {
         player.openInventory(gui);
     }
 
+    public void openBulkDeleteConfirmation(Player player, List<ItemTrackingManager.ItemInfo> items) {
+        this.itemsPendingBulkDeletion.put(player.getUniqueId(), items);
+
+        String titleStr = "      ᴇʟɪᴍɪɴᴀʀ ʀᴇɢɪsᴛʀᴏs (x" + items.size() + ")";
+        Inventory gui = Bukkit.createInventory(new BulkDeleteConfirmHolder(), InventoryType.HOPPER, miniMessage.deserialize(titleStr));
+
+        // --- Botón Confirmar ---
+        Material confirmMat = Material.valueOf(plugin.getConfig().getString("delete-confirmation.confirm-material", "LIME_STAINED_GLASS_PANE"));
+        ItemStack confirmButton = new ItemStack(confirmMat);
+        ItemMeta confirmMeta = confirmButton.getItemMeta();
+        confirmMeta.displayName(miniMessage.deserialize("<!i><#33FF33><b>CONFIRMAR BORRADO MASIVO"));
+        List<Component> confirmLore = new ArrayList<>();
+        confirmLore.add(miniMessage.deserialize("<!i><red>⚠ ¡Esta acción es permanente!"));
+        confirmLore.add(miniMessage.deserialize("<!i><gray>Se eliminará el registro de <yellow>" + items.size() + "<gray> items."));
+        confirmLore.add(miniMessage.deserialize("<!i><gray>Los items físicos serán eliminados."));
+        confirmMeta.lore(confirmLore);
+        confirmMeta.getPersistentDataContainer().set(new NamespacedKey(plugin, "confirm-action"), PersistentDataType.STRING, "bulk-delete");
+        addAllItemFlags(confirmMeta);
+        confirmButton.setItemMeta(confirmMeta);
+
+        // --- Botón Cancelar ---
+        Material cancelMat = Material.valueOf(plugin.getConfig().getString("delete-confirmation.cancel-material", "RED_STAINED_GLASS_PANE"));
+        ItemStack cancelButton = new ItemStack(cancelMat);
+        ItemMeta cancelMeta = cancelButton.getItemMeta();
+        cancelMeta.displayName(miniMessage.deserialize("<!i><#FF1313><b>CANCELAR"));
+        List<Component> cancelLore = new ArrayList<>();
+        cancelLore.add(miniMessage.deserialize("<!i><gray>Regresarás al historial de items."));
+        cancelMeta.lore(cancelLore);
+        cancelMeta.getPersistentDataContainer().set(new NamespacedKey(plugin, "confirm-action"), PersistentDataType.STRING, "cancel");
+        addAllItemFlags(cancelMeta);
+        cancelButton.setItemMeta(cancelMeta);
+
+        // --- Item de Información (en el centro) ---
+        ItemStack infoItem = new ItemStack(Material.CHEST);
+        ItemMeta infoMeta = infoItem.getItemMeta();
+        // Cumplimos tu petición:
+        infoMeta.displayName(miniMessage.deserialize("<!i>Información > Múltiples Objetos"));
+        int amount = Math.max(1, Math.min(64, items.size())); // De 1 a 64
+        infoItem.setAmount(amount);
+        List<Component> infoLore = new ArrayList<>();
+        infoLore.add(miniMessage.deserialize("<!i><gray>Items encontrados: <white>" + items.size()));
+        infoLore.add(miniMessage.deserialize("<!i><gray>Se eliminará el registro de todos"));
+        infoLore.add(miniMessage.deserialize("<!i><gray>los items con ID de tu inventario."));
+        infoMeta.lore(infoLore);
+        addAllItemFlags(infoMeta);
+        infoItem.setItemMeta(infoMeta);
+
+        // --- Setear items ---
+        gui.setItem(0, confirmButton);
+        gui.setItem(2, infoItem);
+        gui.setItem(4, cancelButton);
+
+        plugin.getHistoryGUI().setSwitchingMenu(player, true); // Marcamos como menú de cambio
+        player.openInventory(gui);
+    }
 
     private void addNavigationButtons(Inventory inventory, int currentPage, int totalPages, UUID playerId) {
         if (currentPage > 1) {
@@ -630,4 +688,15 @@ public class HistoryGUI {
             return null; // Correcto
         }
     }
+
+    /**
+     * Holder para el inventario de confirmación de borrado MASIVO.
+     */
+    public class BulkDeleteConfirmHolder implements InventoryHolder {
+        @Override
+        public Inventory getInventory() {
+            return null; // Correcto
+        }
+    }
+
 }
