@@ -40,6 +40,9 @@ public class HistoryGUI {
     private final Map<UUID, SortType> playerSortTypes = new HashMap();
     private final Map<UUID, ItemTrackingManager.ItemInfo> itemPendingDeletion = new HashMap();
 
+    private final Set<UUID> isSwitchingMenu = new HashSet<>();
+    private final Map<UUID, String> playerLastSearch = new HashMap<>();
+
     private final MiniMessage miniMessage;
 
     public HistoryGUI(Main plugin) {
@@ -287,6 +290,9 @@ public class HistoryGUI {
                 this.ensureTrackingManager();
                 List<ItemTrackingManager.ItemInfo> allItems = this.trackingManager.getAllTrackedItems();
                 String lowerSearchTerm = searchTerm.toLowerCase();
+
+                this.playerLastSearch.put(playerId, lowerSearchTerm);
+
                 List<ItemTrackingManager.ItemInfo> results = (List)allItems.stream().filter((item) -> item.getItemName().toLowerCase().contains(lowerSearchTerm) || item.getOriginalOwnerName().toLowerCase().contains(lowerSearchTerm) || item.getCurrentOwnerName().toLowerCase().contains(lowerSearchTerm) || item.getItemId().toLowerCase().contains(lowerSearchTerm)).collect(Collectors.toList());
                 this.playerSearchResults.put(playerId, results);
                 this.setCurrentPage(playerId, 1);
@@ -306,6 +312,7 @@ public class HistoryGUI {
         UUID playerId = player.getUniqueId();
         this.playersInSearchMode.remove(playerId);
         this.playerSearchResults.remove(playerId);
+        this.playerLastSearch.remove(playerId); // <-- AÑADIR ESTA LÍNEA
         this.setCurrentPage(playerId, 1);
         player.sendMessage(miniMessage.deserialize(plugin.getPrefix() + "<red>Modo de búsqueda cancelado"));
         this.openHistoryMenu(player, 1);
@@ -315,6 +322,7 @@ public class HistoryGUI {
         UUID playerId = player.getUniqueId();
         this.playersInSearchMode.remove(playerId);
         this.playerSearchResults.remove(playerId);
+        this.playerLastSearch.remove(playerId); // <-- AÑADIR ESTA LÍNEA
         this.setCurrentPage(playerId, 1);
         this.openHistoryMenu(player, 1);
     }
@@ -323,7 +331,30 @@ public class HistoryGUI {
         UUID playerId = player.getUniqueId();
         this.playersInSearchMode.remove(playerId);
         this.playerSearchResults.remove(playerId);
+        this.playerLastSearch.remove(playerId); // <-- AÑADIR ESTA LÍNEA
         this.setCurrentPage(playerId, 1);
+    }
+
+    public void setSwitchingMenu(Player player, boolean switching) {
+        if (switching) {
+            isSwitchingMenu.add(player.getUniqueId());
+        } else {
+            isSwitchingMenu.remove(player.getUniqueId());
+        }
+    }
+
+    /**
+     * Comprueba si el jugador está cambiando de menú.
+     */
+    public boolean isSwitchingMenu(Player player) {
+        return isSwitchingMenu.contains(player.getUniqueId());
+    }
+
+    /**
+     * Obtiene el último término de búsqueda del jugador.
+     */
+    public String getLastSearchTerm(UUID playerId) {
+        return this.playerLastSearch.get(playerId);
     }
 
     public boolean isInSearchMode(Player player) {

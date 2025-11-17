@@ -3,7 +3,6 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/MagmaItems.iml" filepath="$PROJECT_DIR$/.idea/MagmaItems.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/MagmaItems.main.iml" filepath="$PROJECT_DIR$/.idea/modules/MagmaItems.main.iml" />
     </modules>
   </component>
 </project>

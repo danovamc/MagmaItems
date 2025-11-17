@@ -59,6 +59,7 @@ public class HistoryGUIListener implements Listener {
                     ItemTrackingManager.ItemInfo info = getItemInfoFromClickedItem(event.getCurrentItem());
                     if (info != null) {
                         // 3. Abrir menú de confirmación
+                        plugin.getHistoryGUI().setSwitchingMenu(player, true);
                         plugin.getHistoryGUI().openDeleteConfirmation(player, info);
                     }
                 }
@@ -107,6 +108,16 @@ public class HistoryGUIListener implements Listener {
     public void onInventoryClose(InventoryCloseEvent event) {
         if (event.getPlayer() instanceof Player) {
             Player player = (Player)event.getPlayer();
+
+            // --- INICIO DE LA MODIFICACIÓN ---
+            // Verificamos si estamos cambiando de menú intencionalmente
+            if (plugin.getHistoryGUI().isSwitchingMenu(player)) {
+                // Si es así, simplemente reseteamos el flag y NO limpiamos la búsqueda
+                plugin.getHistoryGUI().setSwitchingMenu(player, false);
+                return;
+            }
+            // --- FIN DE LA MODIFICACIÓN ---
+
             String title = event.getView().getTitle();
             if (title.contains("Historial - [") && this.plugin.getHistoryGUI().isInSearchMode(player)) {
                 this.plugin.getHistoryGUI().clearSearchGUI(player);
@@ -237,8 +248,6 @@ public class HistoryGUIListener implements Listener {
 
         if (container.has(actionKey, PersistentDataType.STRING)) {
             String action = container.get(actionKey, PersistentDataType.STRING);
-
-            // Saca el ItemInfo guardado
             ItemTrackingManager.ItemInfo info = plugin.getHistoryGUI().getItemPendingDeletion().remove(player.getUniqueId());
 
             if ("delete".equals(action)) {
@@ -256,17 +265,39 @@ public class HistoryGUIListener implements Listener {
                     player.sendMessage(miniMessage.deserialize(prefix + "<green>Registro <yellow>" + info.getItemId() + "<green> eliminado exitosamente."));
                     player.playSound(Sound.sound(org.bukkit.Sound.ENTITY_PLAYER_LEVELUP.key(), Source.MASTER, 0.5F, 1.2F));
 
-                    // Cerrar y abrir el historial actualizado
+                    // --- INICIO DE LA MODIFICACIÓN ---
                     player.closeInventory();
+
+                    HistoryGUI historyGUI = plugin.getHistoryGUI();
+                    // Verificamos si el jugador ESTABA en modo búsqueda
+                    boolean wasSearching = historyGUI.isInSearchMode(player);
+
                     plugin.getServer().getScheduler().runTask(plugin, () -> {
-                        plugin.getHistoryGUI().openHistoryMenu(player, 1); // Vuelve a la página 1
+                        if (wasSearching) {
+                            // Si estaba buscando, obtenemos el término y re-procesamos la búsqueda
+                            String lastSearch = historyGUI.getLastSearchTerm(player.getUniqueId());
+                            if (lastSearch != null) {
+                                // Esto actualizará la lista de resultados y reabrirá el menú
+                                historyGUI.processSearch(player, lastSearch);
+                            } else {
+                                // Fallback por si acaso, aunque no debería pasar
+                                historyGUI.openHistoryMenu(player, 1);
+                            }
+                        } else {
+                            // Si no estaba buscando, solo refrescamos la página 1
+                            historyGUI.openHistoryMenu(player, 1);
+                        }
                     });
+                    // --- FIN DE LA MODIFICACIÓN ---
 
                 } else {
                     player.sendMessage(miniMessage.deserialize(prefix + "<red>Error. No se encontró el item a eliminar. Inténtalo de nuevo."));
                     player.closeInventory();
                 }
             } else if ("cancel".equals(action)) {
+                // Esta parte ya estaba bien, la dejamos como está.
+                // Al cerrar, onInventoryClose NO se disparará (por el flag),
+                // y al reabrir el menú, el modo búsqueda seguirá activo.
                 player.closeInventory();
                 player.playSound(Sound.sound(org.bukkit.Sound.UI_BUTTON_CLICK.key(), Source.MASTER, 1.0F, 1.0F));
                 // Reabrir el historial principal
