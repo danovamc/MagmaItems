@@ -2,10 +2,12 @@ package dev.lujanabril.magmaItems.Listeners;
 
 import dev.lujanabril.magmaItems.Main;
 import dev.lujanabril.magmaItems.Managers.CustomItemManager;
+import dev.lujanabril.magmaItems.Managers.ItemManager;
 import dev.lujanabril.magmaItems.Managers.SellManager;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.Sound;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -18,6 +20,8 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.*;
@@ -27,6 +31,7 @@ public class CustomItemListener implements Listener {
     private final Main plugin;
     private final CustomItemManager customItemManager;
     private final SellManager sellManager;
+    private final ItemManager itemManager;
 
     private final int MAX_BLOCKS_PER_OPERATION = 130;
 
@@ -35,6 +40,7 @@ public class CustomItemListener implements Listener {
     private int drillDelayBetweenTicks;
     private List<String> autosellWorlds;
 
+    private final NamespacedKey autosellToggleKey;
     private final Set<UUID> drillingPlayers = new HashSet<>();
     private final Map<UUID, DrillOperationData> activeDrillOperations = new ConcurrentHashMap<>();
 
@@ -45,10 +51,13 @@ public class CustomItemListener implements Listener {
         this.customItemManager = customItemManager;
         this.sellManager = sellManager;
 
-        // Se carga por primera vez aquí
+        this.itemManager = plugin.getItemManager();
+
         this.drillBlocksPerBatch = plugin.getConfig().getInt("drill.optimization.blocks-per-batch", 40);
         this.drillDelayBetweenTicks = plugin.getConfig().getInt("drill.optimization.delay-between-ticks", 1);
         this.autosellWorlds = plugin.getConfig().getStringList("drill.optimization.autosell-worlds");
+
+        this.autosellToggleKey = this.itemManager.getAutosellToggleKey();
     }
 
     // --- MÉTODO NUEVO ---
@@ -96,10 +105,22 @@ public class CustomItemListener implements Listener {
 
                         if (!blocksToBreak.isEmpty()) {
 
-                            boolean itemCanAutosell = itemData.isDrillAutoSell();
+                            // --- INICIO LÓGICA DE AUTOSELL MODIFICADA ---
+                            boolean itemIsCapableOfAutosell = itemData.isDrillAutoSell();
                             String currentWorld = player.getWorld().getName();
+                            boolean worldIsAllowed = autosellWorlds.isEmpty() || autosellWorlds.contains(currentWorld);
 
-                            boolean performAutosell = itemCanAutosell && (autosellWorlds.isEmpty() || autosellWorlds.contains(currentWorld));
+                            // Revisar el NBT del ítem
+                            boolean playerToggledOn = false;
+                            ItemMeta meta = handItem.getItemMeta();
+                            if (meta != null) {
+                                PersistentDataContainer container = meta.getPersistentDataContainer();
+                                playerToggledOn = container.getOrDefault(this.autosellToggleKey, PersistentDataType.BYTE, (byte)0) == (byte)1;
+                            }
+
+                            // La condición final
+                            boolean performAutosell = itemIsCapableOfAutosell && worldIsAllowed && playerToggledOn;
+                            // --- FIN LÓGICA DE AUTOSELL MODIFICADA ---
 
                             DrillOperationData data = new DrillOperationData(
                                     player,
@@ -107,7 +128,7 @@ public class CustomItemListener implements Listener {
                                     itemData,
                                     new LinkedList<>(blocksToBreak),
                                     this.drillBlocksPerBatch,
-                                    performAutosell
+                                    performAutosell // <-- Pasamos el resultado final
                             );
 
                             this.activeDrillOperations.put(playerUuid, data);

@@ -10,8 +10,11 @@ import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import org.bukkit.entity.Player;
 
 public class Main extends JavaPlugin {
     private Map<String, String> placeholders;
@@ -29,6 +32,9 @@ public class Main extends JavaPlugin {
     private BombManager bombManager;
     private CustomItemListener customItemListener;
     private ItemListener itemListener;
+
+    private int playerCheckIndex = 0;
+    private final Map<String, Integer> globalItemCounts = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -63,9 +69,6 @@ public class Main extends JavaPlugin {
         // Tarea asíncrona para chequeos pesados (duplicados, etc.)
         this.startCombinedCheckTask();
 
-        // --- TAREA NUEVA ---
-        // Tarea síncrona para actualizar la ubicación de los items
-        this.startItemLocationUpdateTask();
     }
 
     // --- MÉTODO NUEVO AÑADIDO ---
@@ -89,21 +92,47 @@ public class Main extends JavaPlugin {
     }
 
     private void startCombinedCheckTask() {
-        Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
-            this.itemTrackingManager.checkAllMagmaItems();
-            this.itemTrackingManager.checkAndRemoveBlacklistedItems();
-        }, 600L, 600L); // Se ejecuta cada 30 segundos
-    }
-
-    // --- MÉTODO NUEVO AÑADIDO ---
-    private void startItemLocationUpdateTask() {
-        // Se ejecuta 10 segundos después de iniciar el server, y luego cada 5 segundos.
-        // Es SÍNCRONO (runTaskTimer) para poder acceder a player.getLocation() de forma segura.
+        // Tarea SÍNCRONA (runTaskTimer) que se ejecuta cada 2 ticks.
+        // Esto escanea a un jugador cada 2 ticks, distribuyendo la carga.
         Bukkit.getScheduler().runTaskTimer(this, () -> {
-            if (this.itemTrackingManager != null) {
-                this.itemTrackingManager.updateAllItemLocations();
+
+            // Usamos una copia de la lista para evitar problemas si alguien se conecta/desconecta
+            List<Player> players = new ArrayList<>(Bukkit.getOnlinePlayers());
+            if (players.isEmpty()) {
+                playerCheckIndex = 0; // Resetear si no hay jugadores
+                globalItemCounts.clear(); // Limpiar el mapa de duplicados
+                return;
             }
-        }, 200L, 100L); // 100 Ticks = 5 Segundos
+
+            // Asegurarse de que el índice esté dentro de los límites
+            if (playerCheckIndex >= players.size()) {
+                playerCheckIndex = 0; // Reiniciar el ciclo
+
+                // --- Fin del ciclo: Ejecutar el chequeo de duplicados ---
+                if (!globalItemCounts.isEmpty()) {
+                    this.itemTrackingManager.checkForDuplicates(globalItemCounts);
+                    globalItemCounts.clear(); // Limpiar para el próximo ciclo
+                }
+                // --- Fin del chequeo de duplicados ---
+            }
+
+            // Si la lista de jugadores no está vacía después de todo
+            if (players.isEmpty()) return;
+            if (playerCheckIndex >= players.size()) playerCheckIndex = 0; // Doble chequeo por si acaso
+
+            // Obtener UN jugador de la lista
+            Player playerToCheck = players.get(playerCheckIndex);
+
+            // Ejecutar las comprobaciones (nuevos métodos) SOLO para ESE jugador
+            if (playerToCheck != null && playerToCheck.isOnline()) {
+                this.itemTrackingManager.checkPlayerMagmaItems(playerToCheck, globalItemCounts);
+                this.itemTrackingManager.checkAndRemoveBlacklistedItems(playerToCheck);
+            }
+
+            // Avanzar al siguiente jugador para la próxima ejecución (en 2 ticks)
+            playerCheckIndex++;
+
+        }, 200L, 2L); // Empezar después de 10s, y correr cada 2 ticks (10 jugadores/seg)
     }
 
     public boolean isAdvancedEnchantmentsLoaded() {

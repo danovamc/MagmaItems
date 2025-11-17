@@ -1,5 +1,7 @@
 prefix: "<b><#FD9255>MAGMAITEMS</#FD9255> <dark_gray>➡</b> "
 
+global-action-cooldown-seconds: 3.0
+
 bomb:
   allowed-worlds:
     - mina
@@ -77,6 +79,18 @@ messages:
   drill-sale-chat: ""
   drill-sale-title: ""
   drill-sale-subtitle: "§x§5§9§f§f§2§0+${money}"
+
+  action-cooldown-message: "<red>¡Espera {time}s para cambiar de modo!"
+
+  toggle-autosell-on-chat: "<#FD9255><b>AUTOSELL</b> <dark_gray>➡</dark_gray> <green>¡Autosell Activado!"
+  toggle-autosell-on-title: "<green>AUTOSELL ACTIVADO"
+  toggle-autosell-on-subtitle: "<gray>Los bloques minados se venderán."
+  toggle-autosell-on-actionbar: "<green>¡Autosell Activado!"
+
+  toggle-autosell-off-chat: "<#FD9255><b>AUTOSELL</b> <dark_gray>➡</dark_gray> <red>¡Autosell Desactivado!"
+  toggle-autosell-off-title: "<red>AUTOSELL DESACTIVADO"
+  toggle-autosell-off-subtitle: "<gray>Los bloques minados irán a tu inventario."
+  toggle-autosell-off-actionbar: "<red>¡Autosell Desactivado!"
 
   already-has-id: "<red>Este ítem ya tiene una ID única."
   custom-id-exists: "<red>La ID '%id%' ya existe. Por favor, elige una diferente."

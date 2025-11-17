@@ -22,6 +22,8 @@ import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import java.util.concurrent.ConcurrentHashMap;
+
 public class ItemTrackingManager {
     private final Main plugin;
     private final File trackingFile;
@@ -30,7 +32,7 @@ public class ItemTrackingManager {
     private FileConfiguration deletionLogConfig;
     private final NamespacedKey magmaItemIdKey;
     private final NamespacedKey magmaItemKey;
-    private Map<String, String> itemTrackingCache = new HashMap();
+    private Map<String, String> itemTrackingCache = new ConcurrentHashMap();
 
     private final File removalListFile;
     private FileConfiguration removalListConfig;
@@ -606,51 +608,100 @@ public class ItemTrackingManager {
         return "Desconocido";
     }
 
-    public void checkAllMagmaItems() {
-        this.plugin.getLogger().info("Verificando MagmaItems en el servidor...");
-        Map<String, Integer> itemCounts = new HashMap();
-        int newItemsRegistered = 0;
-        int itemsUpdated = 0;
-        int magmaItemsFound = 0;
-        int magmaIdItemsFound = 0;
+    public void checkPlayerMagmaItems(Player player, Map<String, Integer> itemCounts) {
+        // Esta tarea también actualiza la ubicación del jugador
+        Location playerLocation = player.getLocation();
 
-        for(Player player : Bukkit.getOnlinePlayers()) {
-            for(ItemStack item : player.getInventory().getContents()) {
-                if (item != null && item.getType() != Material.AIR && item.hasItemMeta()) {
-                    ItemMeta meta = item.getItemMeta();
-                    PersistentDataContainer container = meta.getPersistentDataContainer();
-                    if (container.has(this.magmaItemIdKey, PersistentDataType.STRING)) {
-                        String itemId = (String)container.get(this.magmaItemIdKey, PersistentDataType.STRING);
-                        ++magmaIdItemsFound;
+        for(ItemStack item : player.getInventory().getContents()) {
+            if (item != null && item.getType() != Material.AIR && item.hasItemMeta()) {
+                ItemMeta meta = item.getItemMeta();
+                PersistentDataContainer container = meta.getPersistentDataContainer();
+                if (container.has(this.magmaItemIdKey, PersistentDataType.STRING)) {
+                    String itemId = (String)container.get(this.magmaItemIdKey, PersistentDataType.STRING);
 
-                        if (this.idsToRemoveCache.contains(itemId)) {
-                            continue;
-                        }
+                    if (this.idsToRemoveCache.contains(itemId)) {
+                        continue; // Este item será eliminado por la otra tarea
+                    }
 
-                        this.updateItemMaterial(itemId, item.getType());
+                    // Actualizar material (ligero)
+                    this.updateItemMaterial(itemId, item.getType());
 
-                        if (this.idExists(itemId)) {
-                            this.updateItemOwner(itemId, player.getName(), player.getUniqueId().toString());
-                            ++itemsUpdated;
-                        }
+                    // Actualizar dueño y UBICACIÓN (ligero)
+                    if (this.idExists(itemId)) {
+                        this.updateItemOwner(itemId, player.getName(), player.getUniqueId().toString());
+                        this.updateItemLocation(itemId, playerLocation); // <-- ¡AQUÍ ACTUALIZAMOS LA UBICACIÓN!
+                    }
 
-                        itemCounts.put(itemId, (Integer)itemCounts.getOrDefault(itemId, 0) + 1);
-                    } else if (container.has(this.magmaItemKey, PersistentDataType.STRING)) {
-                        ++magmaItemsFound;
+                    // Registrar para el conteo de duplicados
+                    itemCounts.put(itemId, (Integer)itemCounts.getOrDefault(itemId, 0) + 1);
+                }
+            }
+        }
+    }
+
+    /**
+     * Revisa el inventario de UN solo jugador en busca de items en lista negra.
+     * Esta tarea es SÍNCRONA y se llama desde el round-robin de Main.java.
+     */
+    public void checkAndRemoveBlacklistedItems(Player player) {
+        if (idsToRemoveCache.isEmpty()) {
+            return;
+        }
+
+        ItemStack[] contents = player.getInventory().getContents();
+        boolean inventoryChanged = false;
+
+        for (int i = 0; i < contents.length; ++i) {
+            ItemStack item = contents[i];
+            if (item != null && !item.getType().isAir() && item.hasItemMeta()) {
+                ItemMeta meta = item.getItemMeta();
+                PersistentDataContainer container = meta.getPersistentDataContainer();
+
+                if (container.has(this.magmaItemIdKey, PersistentDataType.STRING)) {
+                    String currentId = (String)container.get(this.magmaItemIdKey, PersistentDataType.STRING);
+
+                    if (this.idsToRemoveCache.contains(currentId)) {
+                        String itemName = meta.hasDisplayName() ? meta.getDisplayName().toString() : item.getType().toString();
+                        logPhysicalRemoval(player, currentId, itemName);
+
+                        contents[i] = null;
+                        inventoryChanged = true;
                     }
                 }
             }
         }
 
-        this.plugin.getLogger().info("Verificación completa: " + newItemsRegistered + " nuevos items registrados, " + itemsUpdated + " items actualizados");
-        this.plugin.getLogger().info("Items encontrados: " + magmaIdItemsFound + " con magma_item_id, " + magmaItemsFound);
+        if (inventoryChanged) {
+            // Ya estamos en el hilo síncrono, no necesitamos Bukkit.getScheduler().runTask()
+            player.getInventory().setContents(contents);
+            player.updateInventory();
+            player.sendMessage(this.miniMessage.deserialize("<red>Algunos items en tu inventario han sido eliminados por un administrador."));
+        }
+    }
+
+
+    // --- AÑADIR ESTE MÉTODO NUEVO (PARA ARREGLAR EL COMANDO) ---
+    /**
+     * Este método es para el COMANDO /mi checkduplicates.
+     * Causa un pico de lag momentáneo, pero es un comando manual de admin.
+     * Ejecuta el escaneo de TODOS los jugadores en el hilo principal AHORA.
+     */
+    public void checkAllMagmaItems() {
+        this.plugin.getLogger().info("Iniciando chequeo MANUAL de MagmaItems duplicados...");
+        Map<String, Integer> itemCounts = new HashMap<>();
+
+        // Esto es seguro porque el comando /mi checkduplicates lo llama desde una tarea SÍNCRONA
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            checkPlayerMagmaItems(player, itemCounts); // Reutilizamos la lógica de escaneo
+        }
+
+        this.plugin.getLogger().info("Chequeo de duplicados manual completado.");
         if (!itemCounts.isEmpty()) {
             this.checkForDuplicates(itemCounts);
         }
-
     }
 
-    private void checkForDuplicates(Map<String, Integer> itemCounts) {
+    public void checkForDuplicates(Map<String, Integer> itemCounts) {
         int duplicatesFound = 0;
 
         for(Map.Entry<String, Integer> entry : itemCounts.entrySet()) {

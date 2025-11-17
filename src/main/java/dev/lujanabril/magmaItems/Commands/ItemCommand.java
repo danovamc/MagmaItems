@@ -302,9 +302,13 @@ public class ItemCommand implements CommandExecutor, TabCompleter {
             String startingCheck = this.parsePlaceholders(this.plugin.getConfig().getString("messages.starting-duplicate-check", "<green>Starting check for duplicate MagmaItems..."));
             sender.sendMessage(this.miniMessage.deserialize(this.prefix + startingCheck));
             this.duplicateCheckTaskRunning = true;
-            Bukkit.getScheduler().runTaskAsynchronously(this.plugin, () -> {
+
+            // --- INICIO DE LÍNEA MODIFICADA ---
+            // Cambiado de runTaskAsynchronously a runTask (síncrono)
+            Bukkit.getScheduler().runTask(this.plugin, () -> {
+                // --- FIN DE LÍNEA MODIFICADA ---
                 try {
-                    this.itemTrackingManager.checkAllMagmaItems();
+                    this.itemTrackingManager.checkAllMagmaItems(); // Esta llamada ahora es válida
                     Bukkit.getScheduler().runTask(this.plugin, () -> {
                         String checkComplete = this.parsePlaceholders(this.plugin.getConfig().getString("messages.duplicate-check-complete", "<green>Duplicate check completed. Check console for details."));
                         sender.sendMessage(this.miniMessage.deserialize(this.prefix + checkComplete));

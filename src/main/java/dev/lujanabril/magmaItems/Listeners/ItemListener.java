@@ -10,6 +10,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Color;
 import org.bukkit.FireworkEffect;
 import org.bukkit.FireworkEffect.Type;
+import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Firework;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -18,6 +19,9 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.FireworkMeta;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 
@@ -26,16 +30,26 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import java.util.UUID;
+
 public class ItemListener implements Listener {
     private final Main plugin;
     private final ItemManager itemManager;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
     private final ConfirmationManager confirmationManager;
+    private final NamespacedKey autosellToggleKey;
+
+    private final Map<UUID, Long> actionCooldowns = new HashMap<>();
+    private final long actionCooldownMillis;
 
     public ItemListener(Main plugin) {
         this.plugin = plugin;
-        this.itemManager = new ItemManager(plugin);
+        this.itemManager = plugin.getItemManager(); // <-- Corregido para usar el getter
         this.confirmationManager = new ConfirmationManager(plugin, this);
+        // --- ESTA LÍNEA ESTÁ BIEN Y DEBE QUEDARSE ---
+        this.autosellToggleKey = plugin.getItemManager().getAutosellToggleKey();
+
+        this.actionCooldownMillis = (long) (plugin.getConfig().getDouble("global-action-cooldown-seconds", 3.0) * 1000);
     }
 
     @EventHandler
@@ -52,8 +66,33 @@ public class ItemListener implements Listener {
                 boolean hasActions = !actions.isEmpty() || !shiftActions.isEmpty() || requiresConfirmation;
                 if (hasActions) {
                     event.setCancelled(true);
+
+                    UUID playerUuid = player.getUniqueId();
+                    long currentTime = System.currentTimeMillis();
+                    long lastActionTime = this.actionCooldowns.getOrDefault(playerUuid, 0L);
+
+                    if (currentTime - lastActionTime < this.actionCooldownMillis) {
+                        // --- INICIO DE LÓGICA MODIFICADA ---
+                        // El jugador está en cooldown, enviar mensaje y salir
+                        long remainingMillis = this.actionCooldownMillis - (currentTime - lastActionTime);
+                        double remainingSeconds = remainingMillis / 1000.0;
+
+                        // Formatear a un decimal
+                        String formattedTime = String.format("%.1f", remainingSeconds);
+
+                        // Obtener, reemplazar y enviar el mensaje
+                        String cooldownMessage = plugin.getConfig().getString("messages.action-cooldown-message", "<red>¡Espera {time}s para cambiar de modo!");
+                        cooldownMessage = cooldownMessage.replace("{time}", formattedTime);
+
+                        player.sendActionBar(miniMessage.deserialize(cooldownMessage));
+
+                        return;
+                        // --- FIN DE LÓGICA MODIFICADA ---
+                    }
+                    this.actionCooldowns.put(playerUuid, currentTime);
+
                     if (isShifting && !shiftActions.isEmpty()) {
-                        this.executeShiftActions(player, itemId);
+                        this.executeShiftActions(player, item, itemId);
                     } else {
                         if (!isShifting) {
                             if (requiresConfirmation) {
@@ -87,7 +126,8 @@ public class ItemListener implements Listener {
                 player.sendMessage(this.miniMessage.deserialize("<red><b>ERROR</b> <dark_gray>▸</dark_gray> <white>¡No puedes hacer esto!</white> <gray><i>¿Que estas intentando? el Staff ha sido notificado</i></gray>"));
             } else {
                 for(ItemManager.Action action : actions) {
-                    this.executeAction(action, player);
+                    // --- LÍNEA MODIFICADA (Pasar el 'item') ---
+                    this.executeAction(action, player, item);
                 }
 
                 item.setAmount(item.getAmount() - 1);
@@ -95,11 +135,12 @@ public class ItemListener implements Listener {
         }
     }
 
-    public void executeShiftActions(Player player, String itemId) {
+    public void executeShiftActions(Player player, ItemStack item, String itemId) {
         List<ItemManager.Action> shiftActions = this.itemManager.getShiftClickActions(itemId);
         if (shiftActions != null && !shiftActions.isEmpty()) {
             for(ItemManager.Action action : shiftActions) {
-                this.executeAction(action, player);
+                // --- LÍNEA MODIFICADA (Pasar el 'item') ---
+                this.executeAction(action, player, item);
             }
 
         }
@@ -115,10 +156,55 @@ public class ItemListener implements Listener {
         return null;
     }
 
-    private void executeAction(ItemManager.Action action, Player player) {
+    private void executeAction(ItemManager.Action action, Player player, ItemStack item) {
         if (action != null) {
             String type = action.getType();
             String rawValue = this.parsePlaceholders(action.getRawValue().replace("%player%", player.getName()));
+
+            // --- INICIO DE LÓGICA AÑADIDA ---
+            if ("[TOGGLE_AUTOSELL]".equals(type)) {
+                if (item == null || item.getType().isAir()) return;
+                ItemMeta meta = item.getItemMeta();
+                if (meta == null) return;
+
+                PersistentDataContainer container = meta.getPersistentDataContainer();
+                boolean isCurrentlyOn = container.getOrDefault(this.autosellToggleKey, PersistentDataType.BYTE, (byte)0) == (byte)1;
+
+                String prefix_on = "messages.toggle-autosell-on-";
+                String prefix_off = "messages.toggle-autosell-off-";
+                String targetPrefix;
+
+                if (isCurrentlyOn) {
+                    // Está ON -> Desactivar
+                    container.set(this.autosellToggleKey, PersistentDataType.BYTE, (byte)0);
+                    targetPrefix = prefix_off;
+                } else {
+                    // Está OFF -> Activar
+                    container.set(this.autosellToggleKey, PersistentDataType.BYTE, (byte)1);
+                    targetPrefix = prefix_on;
+                }
+
+                item.setItemMeta(meta); // Guardar el NBT modificado en el item
+
+                // Enviar Feedback
+                String chatMsg = parsePlaceholders(plugin.getConfig().getString(targetPrefix + "chat", ""));
+                String titleMsg = parsePlaceholders(plugin.getConfig().getString(targetPrefix + "title", ""));
+                String subtitleMsg = parsePlaceholders(plugin.getConfig().getString(targetPrefix + "subtitle", ""));
+                String actionbarMsg = parsePlaceholders(plugin.getConfig().getString(targetPrefix + "actionbar", ""));
+
+                if (!chatMsg.isEmpty()) player.sendMessage(miniMessage.deserialize(chatMsg));
+                if (!actionbarMsg.isEmpty()) player.sendActionBar(miniMessage.deserialize(actionbarMsg));
+
+                if (!titleMsg.isEmpty() || !subtitleMsg.isEmpty()) {
+                    Title.Times times = Times.times(Duration.ofMillis(500), Duration.ofMillis(1500), Duration.ofMillis(500));
+                    Title title = Title.title(miniMessage.deserialize(titleMsg), miniMessage.deserialize(subtitleMsg), times);
+                    player.showTitle(title);
+                }
+
+                return; // Acción completada
+            }
+            // --- FIN DE LÓGICA AÑADIDA ---
+
             switch (type) {
                 case "[CONSOLE]":
                     Bukkit.dispatchCommand(Bukkit.getConsoleSender(), rawValue);

@@ -36,6 +36,7 @@ public class ItemManager {
     private final Main plugin;
     private final NamespacedKey key;
     private final NamespacedKey totemUsesKey;
+    private final NamespacedKey autosellToggleKey;
     private final Map<String, ItemData> itemDataCache = new HashMap();
     private final File itemsFolder;
 
@@ -44,6 +45,7 @@ public class ItemManager {
         this.key = new NamespacedKey(plugin, "magma_item");
         this.itemsFolder = new File(plugin.getDataFolder(), "Items");
         this.totemUsesKey = new NamespacedKey(plugin, "totem_uses");
+        this.autosellToggleKey = new NamespacedKey(plugin, "magma_autosell_toggle");
         if (!this.itemsFolder.exists()) {
             this.itemsFolder.mkdirs();
         }
@@ -590,6 +592,10 @@ public class ItemManager {
         }
     }
 
+    public NamespacedKey getAutosellToggleKey() {
+        return this.autosellToggleKey;
+    }
+
     public static class Action {
         private final String type;
         private final String rawValue;
@@ -657,6 +663,7 @@ public class ItemManager {
                 return new int[]{255, 255, 255};
             }
         }
+
 
         public String getType() {
             return this.type;
