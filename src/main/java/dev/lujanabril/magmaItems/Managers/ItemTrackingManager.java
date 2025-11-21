@@ -3,7 +3,7 @@ package dev.lujanabril.magmaItems.Managers;
 import dev.lujanabril.magmaItems.Main;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
-import org.bukkit.Location; // <-- IMPORTADO
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -16,13 +16,12 @@ import org.bukkit.persistence.PersistentDataType;
 
 import java.io.File;
 import java.io.IOException;
-import java.text.ParseException; // <-- IMPORTADO
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap; // <-- ARREGLO 1
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
-import java.util.concurrent.ConcurrentHashMap;
 
 public class ItemTrackingManager {
     private final Main plugin;
@@ -32,6 +31,8 @@ public class ItemTrackingManager {
     private FileConfiguration deletionLogConfig;
     private final NamespacedKey magmaItemIdKey;
     private final NamespacedKey magmaItemKey;
+
+    // --- ARREGLO 1: Cambiado a ConcurrentHashMap para seguridad de hilos ---
     private Map<String, String> itemTrackingCache = new ConcurrentHashMap();
 
     private final File removalListFile;
@@ -156,11 +157,9 @@ public class ItemTrackingManager {
     public void logBulkDeletion(Player remover, List<ItemInfo> itemsInfo) {
         if (itemsInfo == null || itemsInfo.isEmpty()) return;
 
-        // --- CAMBIO: Usar timestamp numérico ---
         long timestamp = System.currentTimeMillis();
         String removerName = remover.getName();
         String removerUuid = remover.getUniqueId().toString();
-        // --- CAMBIO: Usar un formato de fecha estándar para el log ---
         String deletionDate = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(timestamp));
 
         for (ItemInfo itemInfo : itemsInfo) {
@@ -232,7 +231,6 @@ public class ItemTrackingManager {
     }
 
     public void logPhysicalRemoval(Player player, String itemId, String itemName) {
-        // --- CAMBIO: Usar timestamp numérico y formato estándar ---
         long timestamp = System.currentTimeMillis();
         String timestampKey = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date(timestamp));
         String logKey = "removals." + timestampKey + "_" + player.getName() + "_" + itemId;
@@ -246,49 +244,44 @@ public class ItemTrackingManager {
         savePhysicalRemovalsLog();
     }
 
-    public void checkAndRemoveBlacklistedItems() {
+    // --- ARREGLO 2: MÉTODO MODIFICADO (SOLO ESCANEA 1 JUGADOR) ---
+    /**
+     * Revisa el inventario de UN solo jugador en busca de items en lista negra.
+     * Esta tarea es SÍNCRONA y se llama desde el round-robin de Main.java.
+     */
+    public void checkAndRemoveBlacklistedItems(Player player) {
         if (idsToRemoveCache.isEmpty()) {
             return;
         }
 
-        int itemsRemoved = 0;
+        ItemStack[] contents = player.getInventory().getContents();
+        boolean inventoryChanged = false;
 
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            ItemStack[] contents = player.getInventory().getContents();
-            boolean inventoryChanged = false;
+        for (int i = 0; i < contents.length; ++i) {
+            ItemStack item = contents[i];
+            if (item != null && !item.getType().isAir() && item.hasItemMeta()) {
+                ItemMeta meta = item.getItemMeta();
+                PersistentDataContainer container = meta.getPersistentDataContainer();
 
-            for (int i = 0; i < contents.length; ++i) {
-                ItemStack item = contents[i];
-                if (item != null && !item.getType().isAir() && item.hasItemMeta()) {
-                    ItemMeta meta = item.getItemMeta();
-                    PersistentDataContainer container = meta.getPersistentDataContainer();
+                if (container.has(this.magmaItemIdKey, PersistentDataType.STRING)) {
+                    String currentId = (String)container.get(this.magmaItemIdKey, PersistentDataType.STRING);
 
-                    if (container.has(this.magmaItemIdKey, PersistentDataType.STRING)) {
-                        String currentId = (String)container.get(this.magmaItemIdKey, PersistentDataType.STRING);
+                    if (this.idsToRemoveCache.contains(currentId)) {
+                        String itemName = meta.hasDisplayName() ? meta.getDisplayName().toString() : item.getType().toString();
+                        logPhysicalRemoval(player, currentId, itemName);
 
-                        if (this.idsToRemoveCache.contains(currentId)) {
-                            String itemName = meta.hasDisplayName() ? meta.getDisplayName().toString() : item.getType().toString();
-                            logPhysicalRemoval(player, currentId, itemName);
-
-                            contents[i] = null;
-                            inventoryChanged = true;
-                            itemsRemoved++;
-                        }
+                        contents[i] = null;
+                        inventoryChanged = true;
                     }
                 }
             }
-
-            if (inventoryChanged) {
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    player.getInventory().setContents(contents);
-                    player.updateInventory();
-                    player.sendMessage(this.miniMessage.deserialize("<red>Algunos items en tu inventario han sido eliminados por un administrador."));
-                });
-            }
         }
 
-        if (itemsRemoved > 0) {
-            plugin.getLogger().info("Tarea de borrado completada. Se eliminaron " + itemsRemoved + " items físicos.");
+        if (inventoryChanged) {
+            // Ya estamos en el hilo síncrono, no necesitamos Bukkit.getScheduler().runTask()
+            player.getInventory().setContents(contents);
+            player.updateInventory();
+            player.sendMessage(this.miniMessage.deserialize("<red>Algunos items en tu inventario han sido eliminados por un administrador."));
         }
     }
 
@@ -296,7 +289,6 @@ public class ItemTrackingManager {
     public void logDeletion(Player remover, ItemInfo itemInfo) {
         if (itemInfo == null) return;
 
-        // --- CAMBIO: Usar timestamp numérico y formato estándar ---
         long timestamp = System.currentTimeMillis();
         String timestampKey = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date(timestamp));
         String logKey = timestampKey + "_" + itemInfo.getItemId();
@@ -347,9 +339,7 @@ public class ItemTrackingManager {
         return new ArrayList<>(this.itemTrackingCache.keySet());
     }
 
-    // --- MÉTODO MODIFICADO (para usar timestamp) ---
     public void registerItem(String uniqueId, Player player, String itemName, String originalOwnerFromLore) {
-        // --- CAMBIO: Usar timestamp numérico ---
         long timestamp = System.currentTimeMillis();
         Location loc = player.getLocation();
         String playerUuid = player.getUniqueId().toString();
@@ -375,30 +365,26 @@ public class ItemTrackingManager {
         this.saveTracking();
     }
 
-    // --- MÉTODO MODIFICADO (para usar timestamp) ---
     public void updateItemOwner(String uniqueId, String playerName, String playerUuid) {
         String currentData = (String)this.itemTrackingCache.get(uniqueId);
         if (currentData != null) {
             String[] parts = currentData.split(";");
             String[] newParts = Arrays.copyOf(parts, DATA_FIELDS_COUNT);
 
-            // --- CAMBIO: Usar timestamp numérico ---
             long updateTimestamp = System.currentTimeMillis();
 
             newParts[2] = playerName;
             newParts[4] = playerUuid;
-            newParts[6] = String.valueOf(updateTimestamp); // Guardar como String
+            newParts[6] = String.valueOf(updateTimestamp);
 
-            // Llenar campos faltantes si es un item antiguo (migración)
             if (parts.length < 8) newParts[7] = "UNKNOWN";
             if (parts.length < 9) newParts[8] = DEFAULT_WORLD;
             if (parts.length < 10) newParts[9] = "0.0";
             if (parts.length < 11) newParts[10] = "0.0";
             if (parts.length < 12) newParts[11] = "0.0";
 
-            // Migrar fechas de String a long
-            if (parts.length > 5) parseOldDateString(newParts, 5); // creationTime
-            if (parts.length > 6) parseOldDateString(newParts, 6); // lastUpdateTime (se sobrescribirá)
+            if (parts.length > 5) parseOldDateString(newParts, 5);
+            if (parts.length > 6) parseOldDateString(newParts, 6);
 
             String newData = String.join(";", newParts);
 
@@ -408,35 +394,51 @@ public class ItemTrackingManager {
         }
     }
 
-    // --- NUEVO MÉTODO HELPER (para migrar fechas) ---
     private void parseOldDateString(String[] parts, int index) {
         try {
-            // Comprobar si ya es un long
             Long.parseLong(parts[index]);
         } catch (NumberFormatException e) {
-            // No es un long, es una fecha String antigua
             try {
                 SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
                 Date d = sdf.parse(parts[index]);
                 parts[index] = String.valueOf(d.getTime());
             } catch (ParseException ex) {
-                // Error de parseo, usar timestamp actual
                 parts[index] = String.valueOf(System.currentTimeMillis());
             }
         }
     }
 
-    public void updateAllItemLocations() {
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            Location loc = player.getLocation();
-            for (ItemStack item : player.getInventory().getContents()) {
-                if (item != null && !item.getType().isAir() && item.hasItemMeta()) {
-                    PersistentDataContainer container = item.getItemMeta().getPersistentDataContainer();
-                    if (container.has(this.magmaItemIdKey, PersistentDataType.STRING)) {
-                        String itemId = container.get(this.magmaItemIdKey, PersistentDataType.STRING);
-                        if (itemId != null) {
-                            this.updateItemLocation(itemId, loc);
-                        }
+    // --- ARREGLO 2: MÉTODO OBSOLETO (ELIMINADO) ---
+    // public void updateAllItemLocations() { ... }
+    // --- (Este método ya no existe) ---
+
+
+    // --- ARREGLO 2: NUEVO MÉTODO LIGERO ---
+    /**
+     * Revisa el inventario de UN solo jugador para actualizar ubicación/dueño.
+     * Esta tarea es SÍNCRONA y se llama desde el round-robin de Main.java.
+     */
+    public void updatePlayerItemData(Player player) {
+        Location playerLocation = player.getLocation();
+
+        for(ItemStack item : player.getInventory().getContents()) {
+            if (item != null && !item.getType().isAir() && item.hasItemMeta()) {
+                ItemMeta meta = item.getItemMeta();
+                PersistentDataContainer container = meta.getPersistentDataContainer();
+                if (container.has(this.magmaItemIdKey, PersistentDataType.STRING)) {
+                    String itemId = (String)container.get(this.magmaItemIdKey, PersistentDataType.STRING);
+
+                    if (this.idsToRemoveCache.contains(itemId)) {
+                        continue;
+                    }
+
+                    // Actualizar material (ligero)
+                    this.updateItemMaterial(itemId, item.getType());
+
+                    // Actualizar dueño y UBICACIÓN (ligero)
+                    if (this.idExists(itemId)) {
+                        this.updateItemOwner(itemId, player.getName(), player.getUniqueId().toString());
+                        this.updateItemLocation(itemId, playerLocation); // <-- ¡AQUÍ ACTUALIZAMOS LA UBICACIÓN!
                     }
                 }
             }
@@ -457,9 +459,8 @@ public class ItemTrackingManager {
 
         if (parts.length < 8) newParts[7] = "UNKNOWN";
 
-        // Migrar fechas de String a long
-        if (parts.length > 5) parseOldDateString(newParts, 5); // creationTime
-        if (parts.length > 6) parseOldDateString(newParts, 6); // lastUpdateTime
+        if (parts.length > 5) parseOldDateString(newParts, 5);
+        if (parts.length > 6) parseOldDateString(newParts, 6);
 
         String newData = String.join(";", newParts);
 
@@ -468,7 +469,6 @@ public class ItemTrackingManager {
         }
     }
 
-    // --- MÉTODO MODIFICADO (para usar timestamp) ---
     public void updateItemMaterial(String uniqueId, Material material) {
         String currentData = (String)this.itemTrackingCache.get(uniqueId);
         if (currentData != null) {
@@ -478,15 +478,13 @@ public class ItemTrackingManager {
             String materialString = material != null ? material.toString() : "UNKNOWN";
             newParts[7] = materialString;
 
-            // Llenar campos faltantes si es un item antiguo (migración)
             if (parts.length < 9) newParts[8] = DEFAULT_WORLD;
             if (parts.length < 10) newParts[9] = "0.0";
             if (parts.length < 11) newParts[10] = "0.0";
             if (parts.length < 12) newParts[11] = "0.0";
 
-            // Migrar fechas de String a long
-            if (parts.length > 5) parseOldDateString(newParts, 5); // creationTime
-            if (parts.length > 6) parseOldDateString(newParts, 6); // lastUpdateTime
+            if (parts.length > 5) parseOldDateString(newParts, 5);
+            if (parts.length > 6) parseOldDateString(newParts, 6);
 
             String newData = String.join(";", newParts);
 
@@ -496,7 +494,6 @@ public class ItemTrackingManager {
         }
     }
 
-    // --- MÉTODO MODIFICADO (para parsear timestamp) ---
     public ItemInfo getItemInfo(String itemId) {
         String data = (String)this.itemTrackingCache.get(itemId);
         if (data == null) {
@@ -514,7 +511,6 @@ public class ItemTrackingManager {
                 info.setOriginalOwnerUUID(parts[3]);
                 info.setCurrentOwnerUUID(parts[4]);
 
-                // --- INICIO: LÓGICA DE MIGRACIÓN DE FECHA ---
                 long creationTime;
                 try {
                     creationTime = Long.parseLong(parts[5]);
@@ -542,7 +538,6 @@ public class ItemTrackingManager {
                     lastUpdateTime = creationTime;
                 }
                 info.setLastUpdateTime(lastUpdateTime);
-                // --- FIN: LÓGICA DE MIGRACIÓN DE FECHA ---
 
                 if (parts.length >= 8) {
                     try {
@@ -608,99 +603,67 @@ public class ItemTrackingManager {
         return "Desconocido";
     }
 
-    public void checkPlayerMagmaItems(Player player, Map<String, Integer> itemCounts) {
-        // Esta tarea también actualiza la ubicación del jugador
-        Location playerLocation = player.getLocation();
-
-        for(ItemStack item : player.getInventory().getContents()) {
-            if (item != null && item.getType() != Material.AIR && item.hasItemMeta()) {
-                ItemMeta meta = item.getItemMeta();
-                PersistentDataContainer container = meta.getPersistentDataContainer();
-                if (container.has(this.magmaItemIdKey, PersistentDataType.STRING)) {
-                    String itemId = (String)container.get(this.magmaItemIdKey, PersistentDataType.STRING);
-
-                    if (this.idsToRemoveCache.contains(itemId)) {
-                        continue; // Este item será eliminado por la otra tarea
-                    }
-
-                    // Actualizar material (ligero)
-                    this.updateItemMaterial(itemId, item.getType());
-
-                    // Actualizar dueño y UBICACIÓN (ligero)
-                    if (this.idExists(itemId)) {
-                        this.updateItemOwner(itemId, player.getName(), player.getUniqueId().toString());
-                        this.updateItemLocation(itemId, playerLocation); // <-- ¡AQUÍ ACTUALIZAMOS LA UBICACIÓN!
-                    }
-
-                    // Registrar para el conteo de duplicados
-                    itemCounts.put(itemId, (Integer)itemCounts.getOrDefault(itemId, 0) + 1);
-                }
-            }
-        }
-    }
-
+    // --- ARREGLO 3: MÉTODO MODIFICADO (PARA TAREA LENTA Y COMANDO) ---
     /**
-     * Revisa el inventario de UN solo jugador en busca de items en lista negra.
-     * Esta tarea es SÍNCRONA y se llama desde el round-robin de Main.java.
-     */
-    public void checkAndRemoveBlacklistedItems(Player player) {
-        if (idsToRemoveCache.isEmpty()) {
-            return;
-        }
-
-        ItemStack[] contents = player.getInventory().getContents();
-        boolean inventoryChanged = false;
-
-        for (int i = 0; i < contents.length; ++i) {
-            ItemStack item = contents[i];
-            if (item != null && !item.getType().isAir() && item.hasItemMeta()) {
-                ItemMeta meta = item.getItemMeta();
-                PersistentDataContainer container = meta.getPersistentDataContainer();
-
-                if (container.has(this.magmaItemIdKey, PersistentDataType.STRING)) {
-                    String currentId = (String)container.get(this.magmaItemIdKey, PersistentDataType.STRING);
-
-                    if (this.idsToRemoveCache.contains(currentId)) {
-                        String itemName = meta.hasDisplayName() ? meta.getDisplayName().toString() : item.getType().toString();
-                        logPhysicalRemoval(player, currentId, itemName);
-
-                        contents[i] = null;
-                        inventoryChanged = true;
-                    }
-                }
-            }
-        }
-
-        if (inventoryChanged) {
-            // Ya estamos en el hilo síncrono, no necesitamos Bukkit.getScheduler().runTask()
-            player.getInventory().setContents(contents);
-            player.updateInventory();
-            player.sendMessage(this.miniMessage.deserialize("<red>Algunos items en tu inventario han sido eliminados por un administrador."));
-        }
-    }
-
-
-    // --- AÑADIR ESTE MÉTODO NUEVO (PARA ARREGLAR EL COMANDO) ---
-    /**
-     * Este método es para el COMANDO /mi checkduplicates.
-     * Causa un pico de lag momentáneo, pero es un comando manual de admin.
+     * Este método es para el COMANDO /mi checkduplicates y la tarea síncrona de 10 minutos.
+     * Causa un pico de lag momentáneo, pero es intencional y poco frecuente.
      * Ejecuta el escaneo de TODOS los jugadores en el hilo principal AHORA.
      */
     public void checkAllMagmaItems() {
-        this.plugin.getLogger().info("Iniciando chequeo MANUAL de MagmaItems duplicados...");
-        Map<String, Integer> itemCounts = new HashMap<>();
+        this.plugin.getLogger().info("Iniciando chequeo de MagmaItems duplicados...");
 
-        // Esto es seguro porque el comando /mi checkduplicates lo llama desde una tarea SÍNCRONA
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            checkPlayerMagmaItems(player, itemCounts); // Reutilizamos la lógica de escaneo
+        // --- LÓGICA AÑADIDA (CREA SU PROPIO MAPA) ---
+        Map<String, Integer> itemCounts = new HashMap<>();
+        int itemsUpdated = 0;
+        int magmaIdItemsFound = 0;
+        int magmaItemsFound = 0;
+        int newItemsRegistered = 0;
+        // --- FIN LÓGICA AÑADIDA ---
+
+        for(Player player : Bukkit.getOnlinePlayers()) {
+
+            // Reutilizamos la lógica de escaneo de 1 jugador
+            // (Esta lógica ahora solo actualiza ubicación/dueño)
+            updatePlayerItemData(player);
+
+            // --- LÓGICA AÑADIDA (POBLAR EL MAPA LOCAL) ---
+            for(ItemStack item : player.getInventory().getContents()) {
+                if (item != null && item.getType() != Material.AIR && item.hasItemMeta()) {
+                    ItemMeta meta = item.getItemMeta();
+                    PersistentDataContainer container = meta.getPersistentDataContainer();
+                    if (container.has(this.magmaItemIdKey, PersistentDataType.STRING)) {
+                        String itemId = (String)container.get(this.magmaItemIdKey, PersistentDataType.STRING);
+
+                        if (this.idsToRemoveCache.contains(itemId)) {
+                            continue;
+                        }
+
+                        magmaIdItemsFound++;
+                        if (this.idExists(itemId)) {
+                            itemsUpdated++;
+                        }
+
+                        itemCounts.put(itemId, (Integer)itemCounts.getOrDefault(itemId, 0) + 1);
+                    } else if (container.has(this.magmaItemKey, PersistentDataType.STRING)) {
+                        magmaItemsFound++; // Replicando la lógica de tu método original
+                    }
+                }
+            }
+            // --- FIN LÓGICA AÑADIDA ---
         }
 
-        this.plugin.getLogger().info("Chequeo de duplicados manual completado.");
+        // --- LÍNEAS MOVIDAS (Estaban en el viejo checkAllMagmaItems) ---
+        this.plugin.getLogger().info("Verificación completa: " + newItemsRegistered + " nuevos items registrados, " + itemsUpdated + " items actualizados");
+        this.plugin.getLogger().info("Items encontrados: " + magmaIdItemsFound + " con magma_item_id, " + magmaItemsFound);
         if (!itemCounts.isEmpty()) {
             this.checkForDuplicates(itemCounts);
         }
+        // --- FIN LÍNEAS MOVIDAS ---
     }
+    // --- FIN MÉTODO MODIFICADO ---
 
+
+    // --- ARREGLO 3: MÉTODO AHORA ES 'public' ---
     public void checkForDuplicates(Map<String, Integer> itemCounts) {
         int duplicatesFound = 0;
 
@@ -781,10 +744,8 @@ public class ItemTrackingManager {
         private String currentOwnerName;
         private String originalOwnerUUID;
         private String currentOwnerUUID;
-        // --- CAMBIO: String a long ---
         private long creationTime;
         private long lastUpdateTime;
-        // ---
         private Material itemMaterial;
         private String world;
         private double x;
@@ -804,12 +765,10 @@ public class ItemTrackingManager {
         public String getCurrentOwnerUUID() { return this.currentOwnerUUID; }
         public void setCurrentOwnerUUID(String currentOwnerUUID) { this.currentOwnerUUID = currentOwnerUUID; }
 
-        // --- CAMBIO: Getters/Setters para long ---
         public long getCreationTime() { return this.creationTime; }
         public void setCreationTime(long creationTime) { this.creationTime = creationTime; }
         public long getLastUpdateTime() { return this.lastUpdateTime; }
         public void setLastUpdateTime(long lastUpdateTime) { this.lastUpdateTime = lastUpdateTime; }
-        // ---
 
         public Material getItemMaterial() { return this.itemMaterial; }
         public void setItemMaterial(Material itemMaterial) { this.itemMaterial = itemMaterial; }
@@ -822,12 +781,10 @@ public class ItemTrackingManager {
         public double getZ() { return z; }
         public void setZ(double z) { this.z = z; }
 
-        // --- MÉTODO NUEVO: Para calcular distancia ---
         public double distanceTo(Location loc) {
             if (loc == null || !loc.getWorld().getName().equals(this.world)) {
-                return Double.MAX_VALUE; // Si están en mundos diferentes, están "infinitamente" lejos
+                return Double.MAX_VALUE;
             }
-            // Cálculo de distancia simple (pitágoras en 3D)
             return Math.sqrt(
                     Math.pow(this.x - loc.getX(), 2) +
                             Math.pow(this.y - loc.getY(), 2) +

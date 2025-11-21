@@ -10,11 +10,13 @@ import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.plugin.java.JavaPlugin;
 
+// --- AÑADIR ESTAS IMPORTACIONES ---
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.bukkit.entity.Player;
+// --- FIN DE IMPORTACIONES ---
 
 public class Main extends JavaPlugin {
     private Map<String, String> placeholders;
@@ -33,8 +35,9 @@ public class Main extends JavaPlugin {
     private CustomItemListener customItemListener;
     private ItemListener itemListener;
 
+    // --- CAMPO MODIFICADO (YA NO SE NECESITA EL MAPA GLOBAL) ---
     private int playerCheckIndex = 0;
-    private final Map<String, Integer> globalItemCounts = new HashMap<>();
+    // --- FIN DE CAMPO MODIFICADO ---
 
     @Override
     public void onEnable() {
@@ -66,17 +69,20 @@ public class Main extends JavaPlugin {
         this.getCommand("magmaitems").setExecutor(this.itemCommand);
         this.getCommand("magmaitems").setTabCompleter(this.itemCommand);
 
-        // Tarea asíncrona para chequeos pesados (duplicados, etc.)
-        this.startCombinedCheckTask();
+        // --- TAREAS MODIFICADAS ---
+        // Tarea LIGERA (cada 2 ticks) para blacklist y ubicación
+        this.startPlayerScanTask();
 
+        // Tarea PESADA (cada 10 minutos) para duplicados
+        this.startDuplicateCheckTask();
+        // --- FIN TAREAS MODIFICADAS ---
     }
 
-    // --- MÉTODO NUEVO AÑADIDO ---
     @Override
     public void onDisable() {
         if (itemTrackingManager != null) {
             getLogger().info("Guardando datos de seguimiento de MagmaItems...");
-            itemTrackingManager.saveTracking(); // Guardar todos los datos de ubicación al apagar
+            itemTrackingManager.saveTracking();
             getLogger().info("¡Datos de seguimiento guardados!");
         }
     }
@@ -91,49 +97,62 @@ public class Main extends JavaPlugin {
         }
     }
 
-    private void startCombinedCheckTask() {
+    // --- MÉTODO MODIFICADO (YA NO REVISA DUPLICADOS) ---
+    private void startPlayerScanTask() {
         // Tarea SÍNCRONA (runTaskTimer) que se ejecuta cada 2 ticks.
-        // Esto escanea a un jugador cada 2 ticks, distribuyendo la carga.
+        // Escanea 1 jugador cada 2 ticks para blacklist y ubicación.
         Bukkit.getScheduler().runTaskTimer(this, () -> {
 
-            // Usamos una copia de la lista para evitar problemas si alguien se conecta/desconecta
             List<Player> players = new ArrayList<>(Bukkit.getOnlinePlayers());
             if (players.isEmpty()) {
                 playerCheckIndex = 0; // Resetear si no hay jugadores
-                globalItemCounts.clear(); // Limpiar el mapa de duplicados
                 return;
             }
 
             // Asegurarse de que el índice esté dentro de los límites
             if (playerCheckIndex >= players.size()) {
                 playerCheckIndex = 0; // Reiniciar el ciclo
-
-                // --- Fin del ciclo: Ejecutar el chequeo de duplicados ---
-                if (!globalItemCounts.isEmpty()) {
-                    this.itemTrackingManager.checkForDuplicates(globalItemCounts);
-                    globalItemCounts.clear(); // Limpiar para el próximo ciclo
-                }
-                // --- Fin del chequeo de duplicados ---
             }
 
-            // Si la lista de jugadores no está vacía después de todo
             if (players.isEmpty()) return;
-            if (playerCheckIndex >= players.size()) playerCheckIndex = 0; // Doble chequeo por si acaso
+            if (playerCheckIndex >= players.size()) playerCheckIndex = 0;
 
             // Obtener UN jugador de la lista
             Player playerToCheck = players.get(playerCheckIndex);
 
-            // Ejecutar las comprobaciones (nuevos métodos) SOLO para ESE jugador
+            // Ejecutar las comprobaciones LIGERAS
             if (playerToCheck != null && playerToCheck.isOnline()) {
-                this.itemTrackingManager.checkPlayerMagmaItems(playerToCheck, globalItemCounts);
+                // Actualiza ubicación y dueño (nuevo método ligero)
+                this.itemTrackingManager.updatePlayerItemData(playerToCheck);
+                // Revisa si tiene items de la lista negra
                 this.itemTrackingManager.checkAndRemoveBlacklistedItems(playerToCheck);
             }
 
             // Avanzar al siguiente jugador para la próxima ejecución (en 2 ticks)
             playerCheckIndex++;
 
-        }, 200L, 2L); // Empezar después de 10s, y correr cada 2 ticks (10 jugadores/seg)
+        }, 200L, 2L); // Empezar después de 10s, y correr cada 2 ticks
     }
+
+    // --- MÉTODO NUEVO AÑADIDO ---
+    /**
+     * Tarea pesada que busca duplicados. Se ejecuta con poca frecuencia.
+     */
+    private void startDuplicateCheckTask() {
+        // Se ejecuta Síncrono (para acceder a inventarios de forma segura)
+        // Se ejecuta 10 minutos (12000 ticks) después de iniciar el server,
+        // y se repite cada 10 minutos.
+        Bukkit.getScheduler().runTaskTimer(this, () -> {
+
+            getLogger().info("Iniciando chequeo programado de MagmaItems duplicados...");
+
+            // Esta llamada ahora es segura porque es síncrona
+            // y el método interno fue modificado para manejar su propia lógica de conteo.
+            this.itemTrackingManager.checkAllMagmaItems();
+
+        }, 12000L, 12000L); // 12000 ticks = 10 minutos
+    }
+    // --- FIN MÉTODO NUEVO AÑADIDO ---
 
     public boolean isAdvancedEnchantmentsLoaded() {
         return Bukkit.getPluginManager().isPluginEnabled("AdvancedEnchantments");
