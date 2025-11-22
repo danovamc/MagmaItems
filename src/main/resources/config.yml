@@ -118,8 +118,6 @@ messages:
   totem-save: "<#FFD700><b>TOTEM</b> <dark_gray>➡</dark_gray> <#CDFFB8>¡El Tótem te ha salvado!</#CDFFB8> <white>Aún le restan <#FFE550>{uses}</#FFE550> usos.</white>"
   totem-consumed: "<#FFD700><b>TOTEM</b> <dark_gray>➡</dark_gray> <#FF5050>El Tótem se ha roto!</#FF5050>"
 
-  cannot-drop: "<red><b>ERROR</b> <dark_gray>▸</dark_gray> <white>¡No puedes tirar este ítem!</white>"
-  cannot-interact: "<red><b>ERROR</b> <dark_gray>▸</dark_gray> <white>¡No puedes interactuar con este ítem!</white>"
 
   history-usage: "<gray>Uso: /magmaitem history [open|remove <ID|hand|inventory>]"
   history-remove-usage: "<gray>Uso: /magmaitem history remove <ID|hand|inventory>]"

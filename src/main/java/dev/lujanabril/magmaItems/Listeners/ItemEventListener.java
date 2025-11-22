@@ -2,6 +2,7 @@ package dev.lujanabril.magmaItems.Listeners;
 
 import dev.lujanabril.magmaItems.Main;
 import dev.lujanabril.magmaItems.Managers.ItemManager;
+import net.kyori.adventure.text.Component; // <--- IMPORTANTE: AÑADIR ESTO
 import nl.marido.deluxecombat.events.CombatlogEvent;
 import org.bukkit.World;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -42,14 +43,19 @@ public class ItemEventListener implements Listener {
         if (this.itemManager.isMagmaItem(item) && !this.itemManager.isDroppable(item)) {
             event.setCancelled(true);
             Player player = event.getPlayer();
-            player.sendActionBar(this.plugin.getConfig().getString("messages.cannot-drop", "§c§lERROR§r §8▸ §f¡No puedes tirar este ítem!"));
+
+            // --- CORRECCIÓN INICIO ---
+            String rawMsg = this.plugin.getConfig().getString("messages.cannot-drop", "<red><b>ERROR</b> <dark_gray>▸</dark_gray> <white>¡No puedes tirar este ítem!</white>");
+            Component message = this.plugin.getMiniMessage().deserialize(rawMsg);
+
+            player.sendActionBar(message);
             if (this.canSendDropMessage) {
-                player.sendMessage(this.plugin.getConfig().getString("messages.cannot-drop", "§c§lERROR§r §8▸ §f¡No puedes tirar este ítem!"));
+                player.sendMessage(message);
                 this.canSendDropMessage = false;
                 this.plugin.getServer().getScheduler().runTaskLaterAsynchronously(this.plugin, () -> this.canSendDropMessage = true, 60L);
             }
+            // --- CORRECCIÓN FIN ---
         }
-
     }
 
     @EventHandler
@@ -126,7 +132,8 @@ public class ItemEventListener implements Listener {
                         }
                     }
                 }
-
+                // Nota: Aquí también deberías usar MiniMessage si quieres colores modernos,
+                // pero como usas § (legacy), esto funcionará por ahora.
                 player.sendMessage("§x§E§F§0§0§0§0§lETERNAL §8➡ §f¡Habilidad §e§neterna§f activada! Has §e§nrecuperado§f tu pico desde el inframundo.");
             }, 20L);
         }
@@ -190,17 +197,23 @@ public class ItemEventListener implements Listener {
             Player player = (Player)event.getWhoClicked();
             InventoryType type = event.getInventory().getType();
             if (type == InventoryType.ANVIL || type == InventoryType.GRINDSTONE) {
+
+                // --- CORRECCIÓN INICIO (Preparar mensaje) ---
+                String rawMsg = this.plugin.getConfig().getString("messages.cannot-interact", "<red><b>ERROR</b> <dark_gray>▸</dark_gray> <white>¡No puedes interactuar con este ítem!</white>");
+                Component message = this.plugin.getMiniMessage().deserialize(rawMsg);
+                // --- CORRECCIÓN FIN ---
+
                 ItemStack item = event.getCurrentItem();
                 if (item != null && this.itemManager.isMagmaItem(item) && !this.itemManager.isInteractable(item)) {
                     event.setCancelled(true);
-                    player.sendMessage(this.plugin.getConfig().getString("messages.cannot-interact", "§c§lERROR§r §8▸ §f¡No puedes interactuar con este ítem!"));
+                    player.sendMessage(message); // Usar el componente deserializado
                     return;
                 }
 
                 ItemStack cursorItem = event.getCursor();
                 if (cursorItem != null && this.itemManager.isMagmaItem(cursorItem) && !this.itemManager.isInteractable(cursorItem)) {
                     event.setCancelled(true);
-                    player.sendMessage(this.plugin.getConfig().getString("messages.cannot-interact", "§c§lERROR§r §8▸ §f¡No puedes interactuar con este ítem!"));
+                    player.sendMessage(message); // Usar el componente deserializado
                 }
             }
 

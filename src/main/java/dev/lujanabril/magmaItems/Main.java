@@ -8,15 +8,14 @@ import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
-// --- AÑADIR ESTAS IMPORTACIONES ---
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.bukkit.entity.Player;
-// --- FIN DE IMPORTACIONES ---
 
 public class Main extends JavaPlugin {
     private Map<String, String> placeholders;
@@ -35,9 +34,7 @@ public class Main extends JavaPlugin {
     private CustomItemListener customItemListener;
     private ItemListener itemListener;
 
-    // --- CAMPO MODIFICADO (YA NO SE NECESITA EL MAPA GLOBAL) ---
     private int playerCheckIndex = 0;
-    // --- FIN DE CAMPO MODIFICADO ---
 
     @Override
     public void onEnable() {
@@ -46,7 +43,7 @@ public class Main extends JavaPlugin {
 
         this.prefix = this.getConfig().getString("prefix", "<gray>[<red>MagmaItems</red>] ");
 
-        // --- INICIALIZAR MANAGERS ---
+        // Inicialización de Managers
         this.historyGUI = new HistoryGUI(this);
         this.itemManager = new ItemManager(this);
         this.customItemManager = new CustomItemManager(this, this.itemManager);
@@ -58,6 +55,7 @@ public class Main extends JavaPlugin {
         this.itemListener = new ItemListener(this);
         this.customItemListener = new CustomItemListener(this, this.customItemManager, this.sellManager);
 
+        // Registro de Eventos
         this.getServer().getPluginManager().registerEvents(new BombListener(this.customItemManager, this.bombManager), this);
         this.getServer().getPluginManager().registerEvents(this.itemListener, this);
         this.getServer().getPluginManager().registerEvents(this.customItemListener, this);
@@ -65,17 +63,14 @@ public class Main extends JavaPlugin {
         this.getServer().getPluginManager().registerEvents(new HistoryGUIListener(this, this.miniMessage, this.prefix), this);
         this.getServer().getPluginManager().registerEvents(new TotemListener(this), this);
 
+        // Comandos
         this.itemCommand = new ItemCommand(this);
         this.getCommand("magmaitems").setExecutor(this.itemCommand);
         this.getCommand("magmaitems").setTabCompleter(this.itemCommand);
 
-        // --- TAREAS MODIFICADAS ---
-        // Tarea LIGERA (cada 2 ticks) para blacklist y ubicación
+        // Tareas Programadas
         this.startPlayerScanTask();
-
-        // Tarea PESADA (cada 10 minutos) para duplicados
         this.startDuplicateCheckTask();
-        // --- FIN TAREAS MODIFICADAS ---
     }
 
     @Override
@@ -88,71 +83,74 @@ public class Main extends JavaPlugin {
     }
 
     private void loadPlaceholders() {
-        this.placeholders = new HashMap();
+        this.placeholders = new HashMap<>();
         ConfigurationSection placeholderSection = this.getConfig().getConfigurationSection("placeholders");
         if (placeholderSection != null) {
-            for(String key : placeholderSection.getKeys(false)) {
+            for (String key : placeholderSection.getKeys(false)) {
                 this.placeholders.put(key, placeholderSection.getString(key));
             }
         }
     }
 
-    // --- MÉTODO MODIFICADO (YA NO REVISA DUPLICADOS) ---
     private void startPlayerScanTask() {
         // Tarea SÍNCRONA (runTaskTimer) que se ejecuta cada 2 ticks.
-        // Escanea 1 jugador cada 2 ticks para blacklist y ubicación.
+        // Escanea 1 jugador cada 2 ticks para blacklist, ubicación y AUTO-UPDATE.
         Bukkit.getScheduler().runTaskTimer(this, () -> {
 
             List<Player> players = new ArrayList<>(Bukkit.getOnlinePlayers());
             if (players.isEmpty()) {
-                playerCheckIndex = 0; // Resetear si no hay jugadores
+                playerCheckIndex = 0;
                 return;
             }
 
-            // Asegurarse de que el índice esté dentro de los límites
             if (playerCheckIndex >= players.size()) {
-                playerCheckIndex = 0; // Reiniciar el ciclo
+                playerCheckIndex = 0;
             }
 
-            if (players.isEmpty()) return;
-            if (playerCheckIndex >= players.size()) playerCheckIndex = 0;
-
-            // Obtener UN jugador de la lista
             Player playerToCheck = players.get(playerCheckIndex);
 
-            // Ejecutar las comprobaciones LIGERAS
             if (playerToCheck != null && playerToCheck.isOnline()) {
-                // Actualiza ubicación y dueño (nuevo método ligero)
+                // 1. Actualizar ubicación y dueño
                 this.itemTrackingManager.updatePlayerItemData(playerToCheck);
-                // Revisa si tiene items de la lista negra
+                // 2. Eliminar items borrados (blacklist física)
                 this.itemTrackingManager.checkAndRemoveBlacklistedItems(playerToCheck);
+
+                // 3. --- AUTO UPDATE ---
+                ItemStack[] contents = playerToCheck.getInventory().getContents();
+                boolean inventoryChanged = false;
+
+                for (int i = 0; i < contents.length; i++) {
+                    ItemStack item = contents[i];
+                    // Verificar si es un item válido y no es aire
+                    if (item != null && !item.getType().isAir()) {
+                        // Intentar actualizar el item usando el ItemManager
+                        ItemStack updatedItem = this.itemManager.updateItem(item);
+
+                        // Si updateItem devuelve algo distinto de null, significa que cambió
+                        if (updatedItem != null) {
+                            contents[i] = updatedItem;
+                            inventoryChanged = true;
+                        }
+                    }
+                }
+
+                if (inventoryChanged) {
+                    playerToCheck.getInventory().setContents(contents);
+                }
             }
 
-            // Avanzar al siguiente jugador para la próxima ejecución (en 2 ticks)
             playerCheckIndex++;
 
-        }, 200L, 2L); // Empezar después de 10s, y correr cada 2 ticks
+        }, 200L, 2L); // Iniciar a los 10s (200 ticks), repetir cada 2 ticks
     }
 
-    // --- MÉTODO NUEVO AÑADIDO ---
-    /**
-     * Tarea pesada que busca duplicados. Se ejecuta con poca frecuencia.
-     */
     private void startDuplicateCheckTask() {
-        // Se ejecuta Síncrono (para acceder a inventarios de forma segura)
-        // Se ejecuta 10 minutos (12000 ticks) después de iniciar el server,
-        // y se repite cada 10 minutos.
+        // Tarea pesada cada 10 minutos (12000 ticks)
         Bukkit.getScheduler().runTaskTimer(this, () -> {
-
             getLogger().info("Iniciando chequeo programado de MagmaItems duplicados...");
-
-            // Esta llamada ahora es segura porque es síncrona
-            // y el método interno fue modificado para manejar su propia lógica de conteo.
             this.itemTrackingManager.checkAllMagmaItems();
-
-        }, 12000L, 12000L); // 12000 ticks = 10 minutos
+        }, 12000L, 12000L);
     }
-    // --- FIN MÉTODO NUEVO AÑADIDO ---
 
     public boolean isAdvancedEnchantmentsLoaded() {
         return Bukkit.getPluginManager().isPluginEnabled("AdvancedEnchantments");

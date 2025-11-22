@@ -9,6 +9,8 @@ import com.sk89q.worldguard.protection.flags.Flags;
 import com.sk89q.worldguard.protection.flags.StateFlag;
 import com.sk89q.worldguard.protection.managers.RegionManager;
 import dev.lujanabril.magmaItems.Main;
+import net.kyori.adventure.text.Component; // Importación necesaria
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer; // Importación necesaria
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Item;
@@ -19,51 +21,46 @@ import org.bukkit.util.Vector;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Logger;
 
 public class BombManager {
     private final Main plugin;
     private final CustomItemManager customItemManager;
 
     private final Map<UUID, Long> playerCooldowns = new HashMap();
-
-    // --- CAMPO MODIFICADO (ya no es 'final') ---
     private int EXPLOSION_DELAY_TICKS;
-
     private final Map<UUID, ExplosionData> activeExplosions = new ConcurrentHashMap();
-
     private final ItemManager itemManager;
     private final ItemStorageManager itemStorageManager;
-
     private final SellManager sellManager;
 
     public BombManager(Main plugin, CustomItemManager customItemManager, SellManager sellManager) {
         this.plugin = plugin;
         this.customItemManager = customItemManager;
         this.sellManager = sellManager;
-
         this.itemManager = plugin.getItemManager();
         this.itemStorageManager = plugin.getItemStorageManager();
-
-        // Se carga por primera vez aquí
         this.EXPLOSION_DELAY_TICKS = plugin.getConfig().getInt("bomb.optimization.delay-between-ticks", 1);
     }
 
-    // --- MÉTODO NUEVO ---
-    /**
-     * Recarga los valores de configuración de esta clase.
-     */
     public void reload() {
         this.EXPLOSION_DELAY_TICKS = plugin.getConfig().getInt("bomb.optimization.delay-between-ticks", 1);
-        // Recargar aquí cualquier otro valor del config.yml que use esta clase
     }
-    // --- FIN MÉTODO NUEVO ---
+
+    // Método auxiliar para detectar y procesar colores legacy (§) o MiniMessage
+    private Component parseMessage(String message) {
+        if (message == null) return Component.empty();
+        if (message.contains("§")) {
+            return LegacyComponentSerializer.legacySection().deserialize(message);
+        }
+        return this.plugin.getMiniMessage().deserialize(message);
+    }
 
     public void throwBomb(Player player, ItemStack bombItem, boolean isMainHand) {
         if (this.customItemManager.isBombItem(bombItem)) {
             if (!this.isWorldAllowed(player.getWorld().getName())) {
-                String message = this.plugin.getConfig().getString("messages.world-not-allowed", "§c§l[BOMBA] §7No puedes usar bombas en este mundo.");
-                player.sendMessage(message);
+                String rawMessage = this.plugin.getConfig().getString("messages.world-not-allowed", "§c§l[BOMBA] §7No puedes usar bombas en este mundo.");
+                // Usar parseMessage
+                player.sendMessage(parseMessage(rawMessage));
                 player.playSound(player, Sound.ENTITY_VILLAGER_NO, 1.0F, 1.0F);
             } else {
                 CustomItemManager.BombItemData bombData = (CustomItemManager.BombItemData)this.customItemManager.getCustomItemData(bombItem);
@@ -71,8 +68,11 @@ public class BombManager {
                     if (this.hasActiveCooldown(player, bombData)) {
                         double remainingTime = this.getRemainingCooldownPrecise(player, bombData);
                         String formattedTime = this.formatCooldownTime(remainingTime);
-                        String cooldownMessage = this.plugin.getConfig().getString("messages.bomb-cooldown", "§c§l[BOMBA] §7Debes esperar §e{time} §7antes de usar otra bomba.").replace("{time}", formattedTime);
-                        player.sendMessage(cooldownMessage);
+                        String rawCooldown = this.plugin.getConfig().getString("messages.bomb-cooldown", "§c§l[BOMBA] §7Debes esperar §e{time} §7antes de usar otra bomba.")
+                                .replace("{time}", formattedTime);
+
+                        // Usar parseMessage
+                        player.sendMessage(parseMessage(rawCooldown));
                         player.playSound(player, Sound.ENTITY_ARROW_HIT, 0.1F, 0.1F);
                     } else {
                         Location throwLocation = player.getEyeLocation();
@@ -108,33 +108,30 @@ public class BombManager {
         }
     }
 
+    // ... (El resto de métodos privados: hasActiveCooldown, getRemainingCooldownPrecise, etc. siguen IGUAL)
+    // NO BORRES EL RESTO DE MÉTODOS DE LA CLASE, SOLO ACTUALIZA throwBomb y añade parseMessage.
+
     private boolean hasActiveCooldown(Player player, CustomItemManager.BombItemData bombData) {
-        if (bombData.getCooldown() <= 0) {
-            return false;
-        } else {
-            UUID playerId = player.getUniqueId();
-            if (!this.playerCooldowns.containsKey(playerId)) {
-                return false;
-            } else {
-                long currentTime = System.currentTimeMillis();
-                long lastUseTime = (Long)this.playerCooldowns.get(playerId);
-                long cooldownMillis = (long)bombData.getCooldown() * 1000L;
-                return currentTime - lastUseTime < cooldownMillis;
-            }
-        }
+        if (bombData.getCooldown() <= 0) return false;
+        UUID playerId = player.getUniqueId();
+        if (!this.playerCooldowns.containsKey(playerId)) return false;
+        long currentTime = System.currentTimeMillis();
+        long lastUseTime = this.playerCooldowns.get(playerId);
+        long cooldownMillis = (long)bombData.getCooldown() * 1000L;
+        return currentTime - lastUseTime < cooldownMillis;
     }
 
     private double getRemainingCooldownPrecise(Player player, CustomItemManager.BombItemData bombData) {
         UUID playerId = player.getUniqueId();
         long currentTime = System.currentTimeMillis();
-        long lastUseTime = (Long)this.playerCooldowns.get(playerId);
+        long lastUseTime = this.playerCooldowns.get(playerId);
         long cooldownMillis = (long)bombData.getCooldown() * 1000L;
         long remainingMillis = cooldownMillis - (currentTime - lastUseTime);
-        return Math.max((double)0.0F, (double)remainingMillis / (double)1000.0F);
+        return Math.max(0.0, remainingMillis / 1000.0);
     }
 
     private String formatCooldownTime(double seconds) {
-        if (seconds >= (double)1.0F) {
+        if (seconds >= 1.0) {
             return seconds == Math.floor(seconds) ? String.format("%.0fs", seconds) : String.format("%.1fs", seconds);
         } else {
             return String.format("%.2fs", seconds);
@@ -145,7 +142,6 @@ public class BombManager {
         if (bombData.getCooldown() > 0) {
             this.playerCooldowns.put(player.getUniqueId(), System.currentTimeMillis());
         }
-
     }
 
     private boolean isWorldAllowed(String worldName) {
@@ -188,23 +184,16 @@ public class BombManager {
             List<Block> blocksToDestroy = this.getBlocksInShape(center, bombData.getRadius(), bombData.getShape());
 
             if (!blocksToDestroy.isEmpty()) {
-
                 int totalBlocks = blocksToDestroy.size();
-                int delayBetweenTicks = this.EXPLOSION_DELAY_TICKS; // Usa el campo de la clase
+                int delayBetweenTicks = this.EXPLOSION_DELAY_TICKS;
                 int targetDurationTicks = plugin.getConfig().getInt("bomb.optimization.target-duration-ticks", 30);
-
                 int totalBatches = targetDurationTicks / delayBetweenTicks;
                 if (totalBatches <= 0) totalBatches = 1;
-
                 int blocksPerBatch = (int)Math.ceil((double)totalBlocks / totalBatches);
                 int maxBlocksPerBatch = plugin.getConfig().getInt("bomb.optimization.max-blocks-per-batch", 500);
-
                 int finalBlocksPerBatch = Math.min(blocksPerBatch, maxBlocksPerBatch);
-
                 UUID explosionId = UUID.randomUUID();
-
                 ExplosionData explosionData = new ExplosionData(blocksToDestroy, thrower, center, finalBlocksPerBatch, bombData.getCustomDrops());
-
                 this.activeExplosions.put(explosionId, explosionData);
                 this.startOptimizedDestruction(explosionId);
             }
@@ -220,9 +209,7 @@ public class BombManager {
                 } else {
                     List<Block> currentBatch = new ArrayList();
                     int blocksProcessed = 0;
-
                     while(blocksProcessed < data.blocksPerTick && !data.remainingBlocks.isEmpty()) {
-
                         Block block = (Block)data.remainingBlocks.remove(0);
                         if (BombManager.this.isWorldGuardEnabled() && !BombManager.this.canBreakBlock(block.getLocation(), data.player)) {
                             ++blocksProcessed;
@@ -231,7 +218,6 @@ public class BombManager {
                             ++blocksProcessed;
                         }
                     }
-
                     if (!currentBatch.isEmpty()) {
                         BombManager.this.processBatch(currentBatch, data);
                         if (!currentBatch.isEmpty()) {
@@ -239,72 +225,59 @@ public class BombManager {
                             batchCenter.getWorld().spawnParticle(Particle.LARGE_SMOKE, batchCenter, 3, (double)0.5F, (double)0.5F, (double)0.5F, 0.02);
                         }
                     }
-
                     if (data.remainingBlocks.isEmpty()) {
                         BombManager.this.finishExplosion(data);
                         BombManager.this.activeExplosions.remove(explosionId);
                         this.cancel();
                     }
-
                 }
             }
-        }).runTaskTimer(this.plugin, 0L, (long)this.EXPLOSION_DELAY_TICKS); // Usa el campo de la clase
+        }).runTaskTimer(this.plugin, 0L, (long)this.EXPLOSION_DELAY_TICKS);
     }
 
     private void processBatch(List<Block> blocks, ExplosionData data) {
         for(Block block : blocks) {
             Material material = block.getType();
             boolean wasCustomDrop = false;
-
             if (data.customDrops.containsKey(material)) {
                 try {
                     CustomItemManager.CustomDrop dropInfo = data.customDrops.get(material);
                     data.itemsToGive.put(dropInfo.getItemId(), data.itemsToGive.getOrDefault(dropInfo.getItemId(), 0) + dropInfo.getAmount());
                     wasCustomDrop = true;
-
                 } catch (Exception e) {
                     plugin.getLogger().warning("Error al procesar custom drop de bomba: " + e.getMessage());
                 }
             }
-
             if (!wasCustomDrop) {
                 data.itemsToSell.put(material, (Integer)data.itemsToSell.getOrDefault(material, 0) + 1);
             }
-
             block.setType(Material.AIR);
         }
     }
 
     private void finishExplosion(ExplosionData data) {
         this.sellManager.sellItemsToShop(data.player, data.itemsToSell, "messages.bomb-sale-chat", "messages.bomb-sale-title", "messages.bomb-sale-subtitle");
-
         if (!data.itemsToGive.isEmpty()) {
             Bukkit.getScheduler().runTask(plugin, () -> {
                 giveCustomDropsToPlayer(data.player, data.itemsToGive, data.center);
             });
         }
-
         data.center.getWorld().spawnParticle(Particle.EXPLOSION, data.center, 1, (double)0.0F, (double)0.0F, (double)0.0F, (double)0.0F);
         data.center.getWorld().playSound(data.center, Sound.ENTITY_GENERIC_EXPLODE, 1.5F, 0.8F);
     }
 
     private void giveCustomDropsToPlayer(Player player, Map<String, Integer> itemsToGive, Location explosionCenter) {
         if (!player.isOnline()) return;
-
         for (Map.Entry<String, Integer> entry : itemsToGive.entrySet()) {
             String itemId = entry.getKey();
             int amount = entry.getValue();
-
             ItemStack item = this.itemStorageManager.getItem(itemId);
             if (item == null) {
                 plugin.getLogger().warning("¡Fallo al dar custom drop! El item '" + itemId + "' no existe en /mi storage.");
                 continue;
             }
-
             item.setAmount(amount);
-
             HashMap<Integer, ItemStack> leftover = player.getInventory().addItem(item);
-
             if (!leftover.isEmpty()) {
                 for (ItemStack leftoverItem : leftover.values()) {
                     player.getWorld().dropItemNaturally(explosionCenter, leftoverItem);
@@ -320,7 +293,6 @@ public class BombManager {
             return blocks;
         } else {
             int radiusInt = (int)Math.ceil(radius);
-
             for(int x = -radiusInt; x <= radiusInt; ++x) {
                 for(int y = -radiusInt; y <= radiusInt; ++y) {
                     for(int z = -radiusInt; z <= radiusInt; ++z) {
@@ -332,7 +304,6 @@ public class BombManager {
                             case "CUBE" -> shouldInclude = (double)Math.abs(x) <= radius && (double)Math.abs(y) <= radius && (double)Math.abs(z) <= radius;
                             default -> shouldInclude = distance <= radius;
                         }
-
                         if (shouldInclude) {
                             Block block = world.getBlockAt(blockLoc);
                             if (block.getType() != Material.AIR && block.getType() != Material.BEDROCK) {
@@ -342,7 +313,6 @@ public class BombManager {
                     }
                 }
             }
-
             return blocks;
         }
     }

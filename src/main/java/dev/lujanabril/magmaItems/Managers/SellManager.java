@@ -13,10 +13,12 @@ import java.text.DecimalFormat;
 import java.util.Map;
 import java.util.logging.Logger;
 
-/**
- * Clase centralizada para manejar la venta de items.
- * Interactúa con Vault y ShopGuiPlus.
- */
+// Importaciones de Adventure
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.title.Title;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer; // <--- IMPORTANTE
+import java.time.Duration;
+
 public class SellManager {
 
     private final Main plugin;
@@ -42,14 +44,17 @@ public class SellManager {
     }
 
     /**
-     * Vende un mapa de materiales a ShopGUIPlus y deposita el dinero al jugador.
-     *
-     * @param player      El jugador que vende.
-     * @param itemsToSell El mapa de Materiales y cantidades a vender.
-     * @param chatMessageKey     La clave del config.yml para el mensaje de chat.
-     * @param titleMessageKey    La clave del config.yml para el mensaje de título.
-     * @param subtitleMessageKey La clave del config.yml para el mensaje de subtítulo.
+     * Método auxiliar seguro para procesar mensajes.
+     * Si detecta '§', usa el serializador Legacy. Si no, usa MiniMessage.
      */
+    private Component parseMessage(String message) {
+        if (message == null) return Component.empty();
+        if (message.contains("§")) {
+            return LegacyComponentSerializer.legacySection().deserialize(message);
+        }
+        return this.plugin.getMiniMessage().deserialize(message);
+    }
+
     public void sellItemsToShop(Player player, Map<Material, Integer> itemsToSell, String chatMessageKey, String titleMessageKey, String subtitleMessageKey) {
         if (itemsToSell.isEmpty() || this.economy == null || !this.isShopGuiPlusEnabled()) {
             return;
@@ -63,7 +68,6 @@ public class SellManager {
             int quantity = entry.getValue();
 
             try {
-                // Obtenemos el precio de venta por 1 unidad
                 double sellPricePerItem = ShopGuiPlusApi.getItemStackPriceSell(player, new ItemStack(material, 1));
                 if (sellPricePerItem > 0.0) {
                     double totalPrice = sellPricePerItem * quantity;
@@ -78,58 +82,56 @@ public class SellManager {
             }
         }
 
-        // Enviar mensajes de venta si se vendió algo
         if (totalItemsSold > 0) {
 
-            // Lógica del Mensaje de Chat
-            String chatMessageFormat = this.plugin.getConfig().getString(chatMessageKey); // Obtiene el string, o null si no existe
+            // Mensaje de Chat
+            String chatMessageFormat = this.plugin.getConfig().getString(chatMessageKey);
             if (chatMessageFormat != null && !chatMessageFormat.isEmpty()) {
-                String chatMessage = chatMessageFormat
+                String rawChat = chatMessageFormat
                         .replace("{items}", this.itemFormatter.format(totalItemsSold))
                         .replace("{money}", this.formatMoney(totalEarnings));
-                player.sendMessage(chatMessage);
+
+                // Usar método seguro
+                player.sendMessage(parseMessage(rawChat));
             }
 
-            // --- INICIO DE LA MODIFICACIÓN ---
-
-            // Lógica del Título y Subtítulo
+            // Mensajes de Título
             String titleMessageFormat = this.plugin.getConfig().getString(titleMessageKey);
             String subtitleMessageFormat = this.plugin.getConfig().getString(subtitleMessageKey);
 
-            // Comprobar si *alguno* de los dos tiene texto.
             boolean hasTitle = titleMessageFormat != null && !titleMessageFormat.isEmpty();
             boolean hasSubtitle = subtitleMessageFormat != null && !subtitleMessageFormat.isEmpty();
 
-            if (hasTitle || hasSubtitle) { // <-- Lógica corregida
-
-                String titleMessage = ""; // Default a vacío
+            if (hasTitle || hasSubtitle) {
+                String rawTitle = "";
                 if (hasTitle) {
-                    titleMessage = titleMessageFormat
+                    rawTitle = titleMessageFormat
                             .replace("{money}", this.formatMoney(totalEarnings));
                 }
 
-                String subtitleMessage = ""; // Default a vacío
+                String rawSubtitle = "";
                 if (hasSubtitle) {
-                    subtitleMessage = subtitleMessageFormat
+                    rawSubtitle = subtitleMessageFormat
                             .replace("{items}", String.valueOf(totalItemsSold))
                             .replace("{money}", this.formatMoney(totalEarnings));
                 }
 
-                player.sendTitle(titleMessage, subtitleMessage, 10, 40, 10);
-            }
+                // Usar método seguro para ambos componentes
+                Component titleComp = parseMessage(rawTitle);
+                Component subtitleComp = parseMessage(rawSubtitle);
 
-            // --- FIN DE LA MODIFICACIÓN ---
+                Title title = Title.title(
+                        titleComp,
+                        subtitleComp,
+                        Title.Times.times(Duration.ofMillis(500), Duration.ofMillis(2000), Duration.ofMillis(500))
+                );
+                player.showTitle(title);
+            }
 
             player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
         }
     }
 
-    /**
-     * Formatea una cantidad de dinero a un formato legible (k, M, B).
-     *
-     * @param amount La cantidad de dinero.
-     * @return El String formateado.
-     */
     public String formatMoney(double amount) {
         if (amount >= 1.0E9) {
             double billions = amount / 1.0E9;
@@ -145,11 +147,6 @@ public class SellManager {
         }
     }
 
-    /**
-     * Comprueba si ShopGUIPlus está habilitado.
-     *
-     * @return true si está habilitado, false si no.
-     */
     public boolean isShopGuiPlusEnabled() {
         return this.plugin.getServer().getPluginManager().getPlugin("ShopGUIPlus") != null;
     }
