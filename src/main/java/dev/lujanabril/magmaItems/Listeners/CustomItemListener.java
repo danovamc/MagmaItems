@@ -120,7 +120,19 @@ public class CustomItemListener implements Listener {
 
                             // La condición final
                             boolean performAutosell = itemIsCapableOfAutosell && worldIsAllowed && playerToggledOn;
-                            // --- FIN LÓGICA DE AUTOSELL MODIFICADA ---
+
+                            // --- CORRECCIÓN APLICADA AQUÍ ---
+                            if (performAutosell) {
+                                // 1. Añadimos el bloque central (el que el jugador rompió) a la lista del drill
+                                // para que sea procesado por el sistema de venta.
+                                blocksToBreak.add(0, brokenBlock);
+
+                                // 2. Cancelamos el evento original.
+                                // Esto evita que Minecraft suelte el item al suelo, por lo que
+                                // MagmaAutoPickup NO tendrá nada que recoger.
+                                event.setCancelled(true);
+                            }
+                            // --------------------------------
 
                             DrillOperationData data = new DrillOperationData(
                                     player,
@@ -128,7 +140,7 @@ public class CustomItemListener implements Listener {
                                     itemData,
                                     new LinkedList<>(blocksToBreak),
                                     this.drillBlocksPerBatch,
-                                    performAutosell // <-- Pasamos el resultado final
+                                    performAutosell
                             );
 
                             this.activeDrillOperations.put(playerUuid, data);
@@ -180,7 +192,17 @@ public class CustomItemListener implements Listener {
                                         data.itemsToSell.put(block.getType(), data.itemsToSell.getOrDefault(block.getType(), 0) + 1);
                                         block.setType(Material.AIR);
                                     } else {
-                                        block.breakNaturally(data.drillItem);
+                                        // >>>>> INICIO CORRECCIÓN <<<<<
+                                        // Verificamos si algún plugin (como AxMines) canceló los drops vanilla
+                                        if (breakEvent.isDropItems()) {
+                                            // Si nadie canceló los drops, rompemos normal (suelta items vanilla)
+                                            block.breakNaturally(data.drillItem);
+                                        } else {
+                                            // Si AxMines dijo "sin drops" (setDropItems(false)),
+                                            // solo quitamos el bloque sin soltar nada extra.
+                                            block.setType(Material.AIR);
+                                        }
+                                        // >>>>> FIN CORRECCIÓN <<<<<
                                     }
                                     blocksProcessedThisBatch++;
 

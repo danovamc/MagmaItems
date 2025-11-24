@@ -24,6 +24,7 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.time.Duration;
 import java.util.HashMap;
@@ -41,6 +42,7 @@ public class ItemListener implements Listener {
 
     private final Map<UUID, Long> actionCooldowns = new HashMap<>();
     private final long actionCooldownMillis;
+    private final Map<UUID, BukkitTask> activeCooldownTasks = new HashMap<>();
 
     public ItemListener(Main plugin) {
         this.plugin = plugin;
@@ -71,25 +73,63 @@ public class ItemListener implements Listener {
                     long currentTime = System.currentTimeMillis();
                     long lastActionTime = this.actionCooldowns.getOrDefault(playerUuid, 0L);
 
+                    // >>>>> INICIO LÓGICA COOLDOWN MODIFICADA <<<<<
                     if (currentTime - lastActionTime < this.actionCooldownMillis) {
-                        // --- INICIO DE LÓGICA MODIFICADA ---
-                        // El jugador está en cooldown, enviar mensaje y salir
-                        long remainingMillis = this.actionCooldownMillis - (currentTime - lastActionTime);
-                        double remainingSeconds = remainingMillis / 1000.0;
 
-                        // Formatear a un decimal
-                        String formattedTime = String.format("%.1f", remainingSeconds);
+                        // 1. Reproducir el sonido de error (VILLAGER_NO) en cada clic
+                        player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
 
-                        // Obtener, reemplazar y enviar el mensaje
-                        String cooldownMessage = plugin.getConfig().getString("messages.action-cooldown-message", "<red>¡Espera {time}s para cambiar de modo!");
-                        cooldownMessage = cooldownMessage.replace("{time}", formattedTime);
+                        // 2. Si YA se está mostrando el contador, no creamos otro nuevo
+                        if (activeCooldownTasks.containsKey(playerUuid)) {
+                            return;
+                        }
 
-                        player.sendActionBar(miniMessage.deserialize(cooldownMessage));
+                        // 3. Crear la tarea que actualiza el Action Bar cada 2 ticks (0.1s)
+                        BukkitTask task = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+                            // Si el jugador se desconecta, cancelar
+                            if (!player.isOnline()) {
+                                BukkitTask t = activeCooldownTasks.remove(playerUuid);
+                                if (t != null) t.cancel();
+                                return;
+                            }
 
+                            // Calcular tiempo restante en este instante exacto
+                            long now = System.currentTimeMillis();
+                            long remainingMillis = this.actionCooldownMillis - (now - lastActionTime);
+
+                            // Si el tiempo terminó
+                            if (remainingMillis <= 0) {
+                                BukkitTask t = activeCooldownTasks.remove(playerUuid);
+                                if (t != null) t.cancel();
+                                // Opcional: Limpiar el action bar o poner "¡Listo!"
+                                player.sendActionBar(net.kyori.adventure.text.Component.empty());
+                                return;
+                            }
+
+                            // Formatear y enviar mensaje
+                            double remainingSeconds = remainingMillis / 1000.0;
+                            String formattedTime = String.format("%.1f", remainingSeconds);
+
+                            String cooldownMessage = plugin.getConfig().getString("messages.action-cooldown-message", "<red>¡Espera {time}s para cambiar de modo!");
+                            cooldownMessage = cooldownMessage.replace("{time}", formattedTime);
+
+                            player.sendActionBar(miniMessage.deserialize(cooldownMessage));
+
+                        }, 0L, 2L); // Ejecutar inmediatamente (0L) y repetir cada 2 ticks (2L)
+
+                        // Guardar la tarea
+                        activeCooldownTasks.put(playerUuid, task);
                         return;
-                        // --- FIN DE LÓGICA MODIFICADA ---
                     }
+                    // >>>>> FIN LÓGICA COOLDOWN MODIFICADA <<<<<
+
+                    // Si la acción fue exitosa (pasó el cooldown):
                     this.actionCooldowns.put(playerUuid, currentTime);
+
+                    // Limpieza de seguridad: Si había una tarea corriendo, cancelarla
+                    if (activeCooldownTasks.containsKey(playerUuid)) {
+                        activeCooldownTasks.remove(playerUuid).cancel();
+                    }
 
                     if (isShifting && !shiftActions.isEmpty()) {
                         this.executeShiftActions(player, item, itemId);
@@ -200,6 +240,8 @@ public class ItemListener implements Listener {
                     Title title = Title.title(miniMessage.deserialize(titleMsg), miniMessage.deserialize(subtitleMsg), times);
                     player.showTitle(title);
                 }
+
+                player.playSound(player.getLocation(), org.bukkit.Sound.ITEM_WOLF_ARMOR_REPAIR, 0.5f, 1.0f);
 
                 return; // Acción completada
             }
