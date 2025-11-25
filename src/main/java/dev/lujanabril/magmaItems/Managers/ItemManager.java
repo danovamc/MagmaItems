@@ -183,7 +183,8 @@ public class ItemManager {
                                 if (this.plugin.isAdvancedEnchantmentsLoaded()) {
                                     try {
                                         ItemStack originalItem = item.clone();
-                                        item = AEAPI.applyEnchant(enchantName, level, originalItem, true);
+                                        // Mantenemos 'false' por si acaso AE respeta la opción, aunque no lo haga siempre.
+                                        item = AEAPI.applyEnchant(enchantName, level, originalItem, false);
                                         meta = item.getItemMeta();
                                     } catch (Exception e) {
                                         this.plugin.getLogger().warning("Error applying CUSTOM enchant: " + enchantName);
@@ -194,28 +195,11 @@ public class ItemManager {
                     }
                     meta = item.getItemMeta();
 
-                    // Limpieza de lore por AE
-                    if (this.plugin.isAdvancedEnchantmentsLoaded()) {
-                        List<String> aeEnchants = section.getStringList("enchants").stream()
-                                .filter(e -> !e.startsWith("*"))
-                                .toList();
-
-                        if (!aeEnchants.isEmpty()) {
-                            List<Component> currentLore = meta.hasLore() ? meta.lore() : new ArrayList<>();
-                            for (String enchantStr : aeEnchants) {
-                                String cleanName = enchantStr.split(";")[0].trim().toLowerCase();
-                                currentLore.removeIf(component -> {
-                                    String plainText = PlainTextComponentSerializer.plainText().serialize(component);
-                                    return plainText.toLowerCase().contains(cleanName.replace(" ", ""));
-                                });
-                            }
-                            meta.lore(currentLore);
-                        }
-                    }
-
-                    List<Component> finalLore = meta.hasLore() ? meta.lore() : new ArrayList<>();
-                    finalLore.addAll(originalCustomLore);
-                    meta.lore(finalLore);
+                    // --- ARREGLO LORE ---
+                    // Ignoramos completamente el lore que tenga el ítem en este punto (ej. basura de AE)
+                    // y forzamos ÚNICAMENTE el lore que cargamos desde la config.
+                    meta.lore(originalCustomLore);
+                    // --------------------
 
                     boolean shouldGlow = section.getBoolean("glow", false);
                     if (shouldGlow) {

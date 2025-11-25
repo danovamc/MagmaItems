@@ -34,6 +34,8 @@ public class Main extends JavaPlugin {
     private CustomItemListener customItemListener;
     private ItemListener itemListener;
 
+    private boolean debugMode = false; // <--- Variable para almacenar el estado del debug
+
     private int playerCheckIndex = 0;
 
     @Override
@@ -42,6 +44,7 @@ public class Main extends JavaPlugin {
         this.loadPlaceholders();
 
         this.prefix = this.getConfig().getString("prefix", "<gray>[<red>MagmaItems</red>] ");
+        this.debugMode = this.getConfig().getBoolean("debug", false); // <--- Cargar el modo debug
 
         // Inicialización de Managers
         this.historyGUI = new HistoryGUI(this);
@@ -71,6 +74,40 @@ public class Main extends JavaPlugin {
         // Tareas Programadas
         this.startPlayerScanTask();
         this.startDuplicateCheckTask();
+
+        // --- INICIO DEL ARREGLO (DELAYED RELOAD + DEBUG CONTROLADO) ---
+        // Ejecutamos esto 1 tick después de que el servidor haya terminado de cargar
+        Bukkit.getScheduler().runTask(this, () -> {
+
+            // Solo imprimimos esto si el debug está activo
+            logDebug("--------------------------------------------------");
+            logDebug("Iniciando carga diferida de items (Soft-Depends Check)...");
+
+            // DEBUG: Comprobar si AE está realmente cargado en este punto
+            if (isAdvancedEnchantmentsLoaded()) {
+                logDebug("API de AdvancedEnchantments detectada y lista. Los enchants custom DEBERÍAN funcionar.");
+            } else {
+                // Este warning lo dejamos visible aunque no esté en debug porque es importante saber si falla
+                if (debugMode) {
+                    getLogger().warning("[DEBUG] AdvancedEnchantments NO detectado o no habilitado. Los enchants custom NO se aplicarán.");
+                }
+            }
+
+            // Recargar los managers ahora que estamos seguros
+            this.itemManager.reload();
+            this.customItemManager.reload();
+
+            logDebug("Carga diferida completada.");
+            logDebug("--------------------------------------------------");
+        });
+        // --- FIN DEL ARREGLO ---
+    }
+
+    // Método helper para logs de debug
+    public void logDebug(String message) {
+        if (this.debugMode) {
+            getLogger().info("[DEBUG] " + message);
+        }
     }
 
     @Override
@@ -196,12 +233,17 @@ public class Main extends JavaPlugin {
         return this.prefix;
     }
 
+    public boolean isDebugMode() {
+        return this.debugMode;
+    }
+
     @Override
     public void reloadConfig() {
         super.reloadConfig();
         this.loadPlaceholders();
 
         this.prefix = this.getConfig().getString("prefix", "<gray>[<red>MagmaItems</red>] ");
+        this.debugMode = this.getConfig().getBoolean("debug", false); // <--- Recargar modo debug
 
         if (this.itemCommand != null) {
             this.itemCommand.loadPrefix();

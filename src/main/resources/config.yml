@@ -1,3 +1,5 @@
+debug: false
+
 prefix: "<b><#FD9255>MAGMAITEMS</#FD9255> <dark_gray>➡</b> "
 
 global-action-cooldown-seconds: 3.0
