@@ -103,14 +103,52 @@ public class ItemManager {
             ConfigurationSection section = itemsSection.getConfigurationSection(itemId);
             if (section != null) {
                 try {
+                    // 1. CREAR ITEM BASE
                     Material material = Material.valueOf(section.getString("type", "STONE"));
                     ItemStack item = new ItemStack(material);
-                    ItemMeta meta = item.getItemMeta();
-                    String rawName = section.getString("name", itemId);
-                    String nameWithReset = "<!italic>" + rawName;
-                    Component parsedName = MiniMessage.miniMessage().deserialize(nameWithReset);
-                    meta.displayName(parsedName);
 
+                    // 2. APLICAR ENCANTAMIENTOS PRIMERO (Vanilla + AE)
+                    for (String enchantStr : section.getStringList("enchants")) {
+                        if (enchantStr.startsWith("*")) {
+                            enchantStr = enchantStr.substring(1).trim();
+                        }
+                        String[] parts = enchantStr.split(";", 2);
+                        if (parts.length >= 1) {
+                            String enchantName = parts[0].trim();
+                            int level = 1;
+                            try {
+                                level = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 1;
+                            } catch (NumberFormatException ignored) {}
+
+                            String bukkitEnchantName = enchantName.toUpperCase();
+                            Enchantment bukkitEnchant = Enchantment.getByName(bukkitEnchantName);
+
+                            if (bukkitEnchant != null) {
+                                try {
+                                    item.addUnsafeEnchantment(bukkitEnchant, level);
+                                } catch (Exception e) {
+                                    this.plugin.getLogger().warning("Error applying VANILLA enchantment: " + enchantName);
+                                }
+                            } else {
+                                if (this.plugin.isAdvancedEnchantmentsLoaded()) {
+                                    try {
+                                        ItemStack originalItem = item.clone();
+                                        item = AEAPI.applyEnchant(enchantName, level, originalItem, false);
+                                        plugin.logDebug("✅ Aplicado enchant AE '" + enchantName + "' a " + itemId);
+                                    } catch (Exception e) {
+                                        this.plugin.getLogger().warning("Error applying CUSTOM enchant: " + enchantName + ". ¿Está AE cargado?");
+                                    }
+                                } else {
+                                    plugin.logDebug("❌ Saltando enchant AE '" + enchantName + "' - Plugin no detectado.");
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. AHORA OBTENEMOS EL META SUCIO
+                    ItemMeta meta = item.getItemMeta();
+
+                    // 4. PREPARAR TU LORE LIMPIO
                     List<Component> originalCustomLore = new ArrayList<>();
                     int totemUses = section.getInt("totem-uses", 0);
 
@@ -122,14 +160,16 @@ public class ItemManager {
                         originalCustomLore.add(MiniMessage.miniMessage().deserialize(lineWithReset));
                     }
 
-                    this.applyLeatherColor(meta, section, material, itemId);
-                    this.applyArmorTrim(meta, section, material, itemId);
-                    this.applyItemFlags(meta, section, itemId);
-                    this.applyUnbreakable(meta, section, itemId);
-                    meta.addItemFlags(ItemFlag.values());
-                    item.setItemMeta(meta);
+                    // 5. PLANCHAR TU META Y LORE (ESTO BORRA LO DE AE)
+                    String rawName = section.getString("name", itemId);
+                    String nameWithReset = "<!italic>" + rawName;
+                    meta.displayName(MiniMessage.miniMessage().deserialize(nameWithReset));
 
-                    // Atributos
+                    // FIX: Setear a null primero y luego poner tu lore
+                    meta.setLore(null);
+                    meta.lore(originalCustomLore);
+
+                    // 6. APLICAR EL RESTO
                     ConfigurationSection attributesSection = section.getConfigurationSection("attributes");
                     if (attributesSection != null) {
                         for (String attributeKey : attributesSection.getKeys(false)) {
@@ -154,53 +194,13 @@ public class ItemManager {
                             }
                         }
                     }
-                    item.setItemMeta(meta);
 
-                    // Encantamientos
-                    for (String enchantStr : section.getStringList("enchants")) {
-                        if (enchantStr.startsWith("*")) {
-                            enchantStr = enchantStr.substring(1).trim();
-                        }
-                        String[] parts = enchantStr.split(";", 2);
-                        if (parts.length >= 1) {
-                            String enchantName = parts[0].trim();
-                            int level = 1;
-                            try {
-                                level = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 1;
-                            } catch (NumberFormatException ignored) {}
+                    this.applyLeatherColor(meta, section, material, itemId);
+                    this.applyArmorTrim(meta, section, material, itemId);
+                    this.applyItemFlags(meta, section, itemId);
+                    this.applyUnbreakable(meta, section, itemId);
 
-                            String bukkitEnchantName = enchantName.toUpperCase();
-                            Enchantment bukkitEnchant = Enchantment.getByName(bukkitEnchantName);
-
-                            if (bukkitEnchant != null) {
-                                try {
-                                    item.addUnsafeEnchantment(bukkitEnchant, level);
-                                    meta = item.getItemMeta();
-                                } catch (Exception e) {
-                                    this.plugin.getLogger().warning("Error applying VANILLA enchantment: " + enchantName);
-                                }
-                            } else {
-                                if (this.plugin.isAdvancedEnchantmentsLoaded()) {
-                                    try {
-                                        ItemStack originalItem = item.clone();
-                                        // Mantenemos 'false' por si acaso AE respeta la opción, aunque no lo haga siempre.
-                                        item = AEAPI.applyEnchant(enchantName, level, originalItem, false);
-                                        meta = item.getItemMeta();
-                                    } catch (Exception e) {
-                                        this.plugin.getLogger().warning("Error applying CUSTOM enchant: " + enchantName);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    meta = item.getItemMeta();
-
-                    // --- ARREGLO LORE ---
-                    // Ignoramos completamente el lore que tenga el ítem en este punto (ej. basura de AE)
-                    // y forzamos ÚNICAMENTE el lore que cargamos desde la config.
-                    meta.lore(originalCustomLore);
-                    // --------------------
-
+                    meta.addItemFlags(ItemFlag.values());
                     boolean shouldGlow = section.getBoolean("glow", false);
                     if (shouldGlow) {
                         if (meta.getEnchants().isEmpty()) {
@@ -209,18 +209,20 @@ public class ItemManager {
                     }
                     meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
 
+                    meta.getPersistentDataContainer().set(this.key, PersistentDataType.STRING, itemId);
+                    if (totemUses > 0) {
+                        meta.getPersistentDataContainer().set(this.totemUsesKey, PersistentDataType.INTEGER, totemUses);
+                    }
+
+                    // Guardar Meta Final
+                    item.setItemMeta(meta);
+
+                    // 7. PROPIEDADES LÓGICAS
                     boolean droppable = section.getBoolean("droppable", true);
                     boolean keepOnDeath = section.getBoolean("keep-on-death", false);
                     boolean interactable = section.getBoolean("interactable", true);
                     List<String> totemEffects = section.getStringList("totem-effects");
 
-                    meta.getPersistentDataContainer().set(this.key, PersistentDataType.STRING, itemId);
-                    if (totemUses > 0) {
-                        meta.getPersistentDataContainer().set(this.totemUsesKey, PersistentDataType.INTEGER, totemUses);
-                    }
-                    item.setItemMeta(meta);
-
-                    // Acciones
                     List<Action> actions = new ArrayList<>();
                     for (String action : section.getStringList("actions")) {
                         String[] parts = action.split(" ", 2);
@@ -236,7 +238,6 @@ public class ItemManager {
                     }
 
                     boolean requireConfirmation = section.getBoolean("requireConfirmation", false);
-
                     boolean autoUpdate = section.getBoolean("auto-update", false);
 
                     this.itemDataCache.put(itemId, new ItemData(item, actions, shiftClickActions, requireConfirmation, droppable, keepOnDeath, interactable, totemUses, totemEffects, autoUpdate));

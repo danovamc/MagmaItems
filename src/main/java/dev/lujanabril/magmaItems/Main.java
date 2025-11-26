@@ -34,7 +34,7 @@ public class Main extends JavaPlugin {
     private CustomItemListener customItemListener;
     private ItemListener itemListener;
 
-    private boolean debugMode = false; // <--- Variable para almacenar el estado del debug
+    private boolean debugMode = false;
 
     private int playerCheckIndex = 0;
 
@@ -44,7 +44,7 @@ public class Main extends JavaPlugin {
         this.loadPlaceholders();
 
         this.prefix = this.getConfig().getString("prefix", "<gray>[<red>MagmaItems</red>] ");
-        this.debugMode = this.getConfig().getBoolean("debug", false); // <--- Cargar el modo debug
+        this.debugMode = this.getConfig().getBoolean("debug", false);
 
         // Inicialización de Managers
         this.historyGUI = new HistoryGUI(this);
@@ -75,35 +75,25 @@ public class Main extends JavaPlugin {
         this.startPlayerScanTask();
         this.startDuplicateCheckTask();
 
-        // --- INICIO DEL ARREGLO (DELAYED RELOAD + DEBUG CONTROLADO) ---
-        // Ejecutamos esto 1 tick después de que el servidor haya terminado de cargar
-        Bukkit.getScheduler().runTask(this, () -> {
+        // --- CARGA DIFERIDA (SOLUCIÓN RACE CONDITION) ---
+        // 100 ticks = 5 segundos DESPUÉS de que el servidor diga "Done".
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            logDebug("=== INICIO CARGA DIFERIDA (5s post-inicio) ===");
 
-            // Solo imprimimos esto si el debug está activo
-            logDebug("--------------------------------------------------");
-            logDebug("Iniciando carga diferida de items (Soft-Depends Check)...");
-
-            // DEBUG: Comprobar si AE está realmente cargado en este punto
             if (isAdvancedEnchantmentsLoaded()) {
-                logDebug("API de AdvancedEnchantments detectada y lista. Los enchants custom DEBERÍAN funcionar.");
+                logDebug("✅ API de AdvancedEnchantments detectada.");
             } else {
-                // Este warning lo dejamos visible aunque no esté en debug porque es importante saber si falla
-                if (debugMode) {
-                    getLogger().warning("[DEBUG] AdvancedEnchantments NO detectado o no habilitado. Los enchants custom NO se aplicarán.");
-                }
+                if (debugMode) getLogger().warning("[DEBUG] ❌ AdvancedEnchantments NO se detectó.");
             }
 
-            // Recargar los managers ahora que estamos seguros
+            // Recargar para aplicar cambios
             this.itemManager.reload();
             this.customItemManager.reload();
 
-            logDebug("Carga diferida completada.");
-            logDebug("--------------------------------------------------");
-        });
-        // --- FIN DEL ARREGLO ---
+            logDebug("=== FIN CARGA DIFERIDA ===");
+        }, 100L);
     }
 
-    // Método helper para logs de debug
     public void logDebug(String message) {
         if (this.debugMode) {
             getLogger().info("[DEBUG] " + message);
@@ -130,10 +120,7 @@ public class Main extends JavaPlugin {
     }
 
     private void startPlayerScanTask() {
-        // Tarea SÍNCRONA (runTaskTimer) que se ejecuta cada 2 ticks.
-        // Escanea 1 jugador cada 2 ticks para blacklist, ubicación y AUTO-UPDATE.
         Bukkit.getScheduler().runTaskTimer(this, () -> {
-
             List<Player> players = new ArrayList<>(Bukkit.getOnlinePlayers());
             if (players.isEmpty()) {
                 playerCheckIndex = 0;
@@ -147,23 +134,16 @@ public class Main extends JavaPlugin {
             Player playerToCheck = players.get(playerCheckIndex);
 
             if (playerToCheck != null && playerToCheck.isOnline()) {
-                // 1. Actualizar ubicación y dueño
                 this.itemTrackingManager.updatePlayerItemData(playerToCheck);
-                // 2. Eliminar items borrados (blacklist física)
                 this.itemTrackingManager.checkAndRemoveBlacklistedItems(playerToCheck);
 
-                // 3. --- AUTO UPDATE ---
                 ItemStack[] contents = playerToCheck.getInventory().getContents();
                 boolean inventoryChanged = false;
 
                 for (int i = 0; i < contents.length; i++) {
                     ItemStack item = contents[i];
-                    // Verificar si es un item válido y no es aire
                     if (item != null && !item.getType().isAir()) {
-                        // Intentar actualizar el item usando el ItemManager
                         ItemStack updatedItem = this.itemManager.updateItem(item);
-
-                        // Si updateItem devuelve algo distinto de null, significa que cambió
                         if (updatedItem != null) {
                             contents[i] = updatedItem;
                             inventoryChanged = true;
@@ -178,11 +158,10 @@ public class Main extends JavaPlugin {
 
             playerCheckIndex++;
 
-        }, 200L, 2L); // Iniciar a los 10s (200 ticks), repetir cada 2 ticks
+        }, 200L, 2L);
     }
 
     private void startDuplicateCheckTask() {
-        // Tarea pesada cada 10 minutos (12000 ticks)
         Bukkit.getScheduler().runTaskTimer(this, () -> {
             getLogger().info("Iniciando chequeo programado de MagmaItems duplicados...");
             this.itemTrackingManager.checkAllMagmaItems();
@@ -197,8 +176,8 @@ public class Main extends JavaPlugin {
         if (mmString == null) return null;
         String sanitizedString = mmString.replace('§', '&');
         net.kyori.adventure.text.Component component = this.miniMessage.deserialize(sanitizedString);
-        String legacyAmpersandString = LegacyComponentSerializer.legacyAmpersand().serialize(component);
-        return legacyAmpersandString.replace('&', '§');
+        String legacy = LegacyComponentSerializer.legacyAmpersand().serialize(component);
+        return legacy.replace('&', '§');
     }
 
     public HistoryGUI getHistoryGUI() {
@@ -243,7 +222,7 @@ public class Main extends JavaPlugin {
         this.loadPlaceholders();
 
         this.prefix = this.getConfig().getString("prefix", "<gray>[<red>MagmaItems</red>] ");
-        this.debugMode = this.getConfig().getBoolean("debug", false); // <--- Recargar modo debug
+        this.debugMode = this.getConfig().getBoolean("debug", false);
 
         if (this.itemCommand != null) {
             this.itemCommand.loadPrefix();
